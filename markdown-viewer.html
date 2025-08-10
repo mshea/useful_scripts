@@ -1,0 +1,746 @@
+<!--
+CC0 1.0 Universal (CC0 1.0) Public Domain Dedication
+
+The person who associated a work with this deed has dedicated the work to the public domain 
+by waiving all of his or her rights to the work worldwide under copyright law, including all 
+related and neighboring rights, to the extent allowed by law.
+
+You can copy, modify, distribute and perform the work, even for commercial purposes, all 
+without asking permission. See Other Information below.
+
+https://creativecommons.org/publicdomain/zero/1.0/
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markdown Viewer</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        
+        .input-section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .file-input {
+            margin-bottom: 15px;
+        }
+        
+        .file-input label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        
+        input[type="file"] {
+            width: 100%;
+            padding: 8px;
+            border: 2px dashed #ccc;
+            border-radius: 4px;
+            background: #fafafa;
+        }
+        
+        .separator {
+            text-align: center;
+            margin: 15px 0;
+            color: #666;
+            font-weight: 500;
+        }
+        
+        .text-input label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        
+        textarea {
+            width: 100%;
+            height: 200px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 14px;
+            resize: vertical;
+        }
+        
+        .output-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .visual-section {
+            margin-top: 20px;
+        }
+        
+        .output-panel {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .panel-header {
+            background: #f8f9fa;
+            padding: 15px 20px;
+            border-bottom: 1px solid #e9ecef;
+            border-radius: 8px 8px 0 0;
+            font-weight: 600;
+            color: #495057;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .copy-btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .copy-btn:hover {
+            background: #0056b3;
+        }
+        
+        .panel-content {
+            padding: 20px;
+            height: 500px;
+            overflow-y: auto;
+        }
+        
+        .html-output {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            border: 1px solid #e9ecef;
+        }
+        
+        .visual-output {
+            line-height: 1.6;
+        }
+        
+        .visual-output h1, .visual-output h2, .visual-output h3, 
+        .visual-output h4, .visual-output h5, .visual-output h6 {
+            margin-top: 0;
+            margin-bottom: 16px;
+            color: #333;
+        }
+        
+        .visual-output p {
+            margin-bottom: 16px;
+        }
+        
+        .visual-output blockquote {
+            margin: 0 0 16px;
+            padding-left: 16px;
+            border-left: 4px solid #ddd;
+            color: #666;
+        }
+        
+        .visual-output code {
+            background: #f6f8fa;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.9em;
+        }
+        
+        .visual-output pre {
+            background: #f6f8fa;
+            padding: 16px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin-bottom: 16px;
+        }
+        
+        .visual-output pre code {
+            background: none;
+            padding: 0;
+        }
+        
+        .visual-output ul, .visual-output ol {
+            margin-bottom: 16px;
+            padding-left: 32px;
+        }
+        
+        .visual-output li {
+            margin-bottom: 4px;
+        }
+        
+        .visual-output table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-bottom: 16px;
+        }
+        
+        .visual-output th, .visual-output td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        
+        .visual-output th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        
+        .visual-output a {
+            color: #0366d6;
+            text-decoration: none;
+        }
+        
+        .visual-output a:hover {
+            text-decoration: underline;
+        }
+        
+        @media (max-width: 1024px) {
+            .output-section {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Markdown Viewer</h1>
+        
+        <div class="input-section">
+            <div class="file-input">
+                <label for="fileInput">Choose a markdown file:</label>
+                <input type="file" id="fileInput" accept=".md,.markdown,.txt">
+            </div>
+            
+            <div class="separator">— OR —</div>
+            
+            <div class="text-input">
+                <label for="textInput">Paste your markdown text:</label>
+                <textarea id="textInput" placeholder="# Your markdown here..."></textarea>
+            </div>
+            
+            <div class="separator">— OR —</div>
+            
+            <div class="text-input">
+                <label for="htmlInput">Paste your HTML to convert to markdown:</label>
+                <textarea id="htmlInput" placeholder="<h1>Your HTML here...</h1>"></textarea>
+            </div>
+        </div>
+        
+        <div class="output-section">
+            <div class="output-panel">
+                <div class="panel-header">
+                    HTML Markup
+                    <button class="copy-btn" onclick="copyHTML()">Copy HTML</button>
+                </div>
+                <div class="panel-content">
+                    <div id="htmlOutput" class="html-output">HTML markup will appear here...</div>
+                </div>
+            </div>
+            
+            <div class="output-panel">
+                <div class="panel-header">
+                    Markdown Output
+                    <button class="copy-btn" onclick="copyMarkdown()">Copy Markdown</button>
+                </div>
+                <div class="panel-content">
+                    <div id="markdownOutput" class="html-output">Markdown output will appear here...</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="visual-section">
+            <div class="output-panel">
+                <div class="panel-header">Visual Output</div>
+                <div class="panel-content">
+                    <div id="visualOutput" class="visual-output">Visual output will appear here...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function parseMarkdown(markdown) {
+            const lines = markdown.split('\n');
+            let html = '';
+            let inList = false;
+            let listType = '';
+            
+            for (let i = 0; i < lines.length; i++) {
+                let line = lines[i];
+                let processed = false;
+                
+                // Headers
+                if (line.match(/^###### /)) {
+                    if (inList) { html += `</${listType}>`, inList = false; }
+                    html += '<h6>' + line.replace(/^###### /, '') + '</h6>';
+                    processed = true;
+                } else if (line.match(/^##### /)) {
+                    if (inList) { html += `</${listType}>`, inList = false; }
+                    html += '<h5>' + line.replace(/^##### /, '') + '</h5>';
+                    processed = true;
+                } else if (line.match(/^#### /)) {
+                    if (inList) { html += `</${listType}>`, inList = false; }
+                    html += '<h4>' + line.replace(/^#### /, '') + '</h4>';
+                    processed = true;
+                } else if (line.match(/^### /)) {
+                    if (inList) { html += `</${listType}>`, inList = false; }
+                    html += '<h3>' + line.replace(/^### /, '') + '</h3>';
+                    processed = true;
+                } else if (line.match(/^## /)) {
+                    if (inList) { html += `</${listType}>`, inList = false; }
+                    html += '<h2>' + line.replace(/^## /, '') + '</h2>';
+                    processed = true;
+                } else if (line.match(/^# /)) {
+                    if (inList) { html += `</${listType}>`, inList = false; }
+                    html += '<h1>' + line.replace(/^# /, '') + '</h1>';
+                    processed = true;
+                }
+                
+                // Unordered lists
+                else if (line.match(/^[\*\-] /)) {
+                    if (!inList || listType !== 'ul') {
+                        if (inList) html += `</${listType}>`;
+                        html += '<ul>';
+                        inList = true;
+                        listType = 'ul';
+                    }
+                    html += '<li>' + line.replace(/^[\*\-] /, '') + '</li>';
+                    processed = true;
+                }
+                
+                // Ordered lists
+                else if (line.match(/^\d+\. /)) {
+                    if (!inList || listType !== 'ol') {
+                        if (inList) html += `</${listType}>`;
+                        html += '<ol>';
+                        inList = true;
+                        listType = 'ol';
+                    }
+                    html += '<li>' + line.replace(/^\d+\. /, '') + '</li>';
+                    processed = true;
+                }
+                
+                // Blockquotes
+                else if (line.match(/^> /)) {
+                    if (inList) { html += `</${listType}>`, inList = false; }
+                    html += '<blockquote>' + line.replace(/^> /, '') + '</blockquote>';
+                    processed = true;
+                }
+                
+                // Tables
+                else if (line.match(/^\|.*\|$/)) {
+                    if (inList) { html += `</${listType}>`, inList = false; }
+                    
+                    // Look ahead to see if this is a table
+                    let tableLines = [line];
+                    let j = i + 1;
+                    
+                    // Check if next line is a header separator
+                    let isTable = false;
+                    if (j < lines.length && lines[j].match(/^\|[\s\-\|:]+\|$/)) {
+                        isTable = true;
+                        tableLines.push(lines[j]);
+                        j++;
+                        
+                        // Continue collecting table rows
+                        while (j < lines.length && lines[j].match(/^\|.*\|$/)) {
+                            tableLines.push(lines[j]);
+                            j++;
+                        }
+                    }
+                    
+                    if (isTable) {
+                        html += '<table>';
+                        
+                        // Process header row
+                        const headerCells = tableLines[0].split('|').slice(1, -1).map(cell => cell.trim());
+                        html += '<thead><tr>';
+                        headerCells.forEach(cell => {
+                            html += `<th>${cell}</th>`;
+                        });
+                        html += '</tr></thead>';
+                        
+                        // Process body rows (skip separator line)
+                        if (tableLines.length > 2) {
+                            html += '<tbody>';
+                            for (let k = 2; k < tableLines.length; k++) {
+                                const rowCells = tableLines[k].split('|').slice(1, -1).map(cell => cell.trim());
+                                html += '<tr>';
+                                rowCells.forEach(cell => {
+                                    html += `<td>${cell}</td>`;
+                                });
+                                html += '</tr>';
+                            }
+                            html += '</tbody>';
+                        }
+                        
+                        html += '</table>';
+                        i = j - 1; // Skip processed lines
+                        processed = true;
+                    }
+                }
+                
+                // Horizontal rules
+                else if (line.match(/^(---|\*\*\*)$/)) {
+                    if (inList) { html += `</${listType}>`, inList = false; }
+                    html += '<hr>';
+                    processed = true;
+                }
+                
+                // Empty lines
+                else if (line.trim() === '') {
+                    if (inList) { html += `</${listType}>`, inList = false; }
+                    if (html && !html.endsWith('>')) html += '</p>';
+                    processed = true;
+                }
+                
+                // Regular paragraphs
+                else if (!processed && line.trim() !== '') {
+                    if (inList) { html += `</${listType}>`, inList = false; }
+                    if (!html.endsWith('>') || html.endsWith('</p>')) {
+                        html += '<p>';
+                    }
+                    html += line;
+                    processed = true;
+                }
+            }
+            
+            // Close any open list
+            if (inList) {
+                html += `</${listType}>`;
+            }
+            
+            // Close any open paragraph
+            if (html && !html.endsWith('>')) {
+                html += '</p>';
+            }
+            
+            // Process inline formatting
+            html = html.replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>');
+            html = html.replace(/__(.*?)__/gim, '<strong>$1</strong>');
+            html = html.replace(/\*(.*?)\*/gim, '<em>$1</em>');
+            html = html.replace(/_(.*?)_/gim, '<em>$1</em>');
+            html = html.replace(/```([\s\S]*?)```/gim, '<pre><code>$1</code></pre>');
+            html = html.replace(/`(.*?)`/gim, '<code>$1</code>');
+            html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/gim, '<a href="$2">$1</a>');
+            html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/gim, '<img src="$2" alt="$1">');
+            
+            return html;
+        }
+        
+        function prettifyHTML(html) {
+            let formatted = html;
+            let indent = 0;
+            const indentSize = 2;
+            
+            // Add line breaks after tags, but be more careful about it
+            formatted = formatted.replace(/></g, '>\n<');
+            
+            const lines = formatted.split('\n');
+            const prettified = [];
+            
+            // Self-closing and void elements
+            const voidElements = new Set(['br', 'hr', 'img', 'input', 'meta', 'link', 'area', 'base', 'col', 'embed', 'source', 'track', 'wbr']);
+            
+            for (let line of lines) {
+                line = line.trim();
+                if (!line) continue;
+                
+                // Handle closing tags
+                if (line.startsWith('</')) {
+                    indent = Math.max(0, indent - indentSize);
+                    prettified.push(' '.repeat(indent) + line);
+                    continue;
+                }
+                
+                // Handle opening tags
+                if (line.startsWith('<')) {
+                    const tagMatch = line.match(/<(\w+)/);
+                    if (tagMatch) {
+                        const tagName = tagMatch[1].toLowerCase();
+                        
+                        // Check if it's a self-closing tag or void element
+                        const isSelfClosing = line.endsWith('/>') || voidElements.has(tagName);
+                        
+                        // Check if it's a complete tag (opening and closing on same line)
+                        const hasClosingTag = line.includes('</' + tagName + '>');
+                        
+                        // Add current line with indentation
+                        prettified.push(' '.repeat(indent) + line);
+                        
+                        // Only increase indent if it's not self-closing and doesn't have closing tag on same line
+                        if (!isSelfClosing && !hasClosingTag) {
+                            indent += indentSize;
+                        }
+                    } else {
+                        // Malformed tag, just add it
+                        prettified.push(' '.repeat(indent) + line);
+                    }
+                } else {
+                    // Text content
+                    prettified.push(' '.repeat(indent) + line);
+                }
+            }
+            
+            return prettified.join('\n');
+        }
+        
+        function htmlToMarkdown(html) {
+            // Create a temporary DOM element to parse HTML
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = html;
+            
+            function processNode(node) {
+                let result = '';
+                
+                if (node.nodeType === Node.TEXT_NODE) {
+                    return node.textContent;
+                }
+                
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                    const tagName = node.tagName.toLowerCase();
+                    const childContent = Array.from(node.childNodes)
+                        .map(child => processNode(child))
+                        .join('');
+                    
+                    switch (tagName) {
+                        case 'h1':
+                            return `# ${childContent}\n\n`;
+                        case 'h2':
+                            return `## ${childContent}\n\n`;
+                        case 'h3':
+                            return `### ${childContent}\n\n`;
+                        case 'h4':
+                            return `#### ${childContent}\n\n`;
+                        case 'h5':
+                            return `##### ${childContent}\n\n`;
+                        case 'h6':
+                            return `###### ${childContent}\n\n`;
+                        case 'p':
+                            return `${childContent}\n\n`;
+                        case 'br':
+                            return '\n';
+                        case 'strong':
+                        case 'b':
+                            return `**${childContent}**`;
+                        case 'em':
+                        case 'i':
+                            return `*${childContent}*`;
+                        case 'code':
+                            if (node.parentNode.tagName.toLowerCase() === 'pre') {
+                                return childContent;
+                            }
+                            return `\`${childContent}\``;
+                        case 'pre':
+                            return `\`\`\`\n${childContent}\n\`\`\`\n\n`;
+                        case 'a':
+                            const href = node.getAttribute('href') || '';
+                            return `[${childContent}](${href})`;
+                        case 'img':
+                            const src = node.getAttribute('src') || '';
+                            const alt = node.getAttribute('alt') || '';
+                            return `![${alt}](${src})`;
+                        case 'blockquote':
+                            return childContent.split('\n')
+                                .map(line => line.trim() ? `> ${line}` : '>')
+                                .join('\n') + '\n\n';
+                        case 'ul':
+                            return processListItems(node, '- ') + '\n';
+                        case 'ol':
+                            return processListItems(node, '1. ') + '\n';
+                        case 'li':
+                            return childContent;
+                        case 'hr':
+                            return '---\n\n';
+                        case 'table':
+                            return processTable(node) + '\n';
+                        default:
+                            return childContent;
+                    }
+                }
+                
+                return '';
+            }
+            
+            function processListItems(listNode, prefix) {
+                let result = '';
+                let counter = 1;
+                
+                Array.from(listNode.children).forEach(li => {
+                    if (li.tagName.toLowerCase() === 'li') {
+                        const content = processNode(li).trim();
+                        const actualPrefix = listNode.tagName.toLowerCase() === 'ol' 
+                            ? `${counter}. ` 
+                            : prefix;
+                        result += `${actualPrefix}${content}\n`;
+                        counter++;
+                    }
+                });
+                
+                return result;
+            }
+            
+            function processTable(tableNode) {
+                const rows = Array.from(tableNode.querySelectorAll('tr'));
+                if (rows.length === 0) return '';
+                
+                let result = '';
+                
+                rows.forEach((row, index) => {
+                    const cells = Array.from(row.querySelectorAll('th, td'));
+                    const cellContents = cells.map(cell => processNode(cell).trim());
+                    result += `| ${cellContents.join(' | ')} |\n`;
+                    
+                    // Add header separator after first row if it contains th elements
+                    if (index === 0 && row.querySelector('th')) {
+                        result += `| ${cells.map(() => '---').join(' | ')} |\n`;
+                    }
+                });
+                
+                return result;
+            }
+            
+            const markdown = processNode(tempDiv);
+            
+            // Clean up extra newlines
+            return markdown
+                .replace(/\n{3,}/g, '\n\n')
+                .trim();
+        }
+        
+        function updateOutput(markdown) {
+            if (!markdown.trim()) {
+                document.getElementById('htmlOutput').textContent = 'HTML markup will appear here...';
+                document.getElementById('visualOutput').innerHTML = 'Visual output will appear here...';
+                document.getElementById('markdownOutput').textContent = 'Markdown output will appear here...';
+                return;
+            }
+            
+            const html = parseMarkdown(markdown);
+            const prettifiedHTML = prettifyHTML(html);
+            
+            // Show prettified HTML markup
+            document.getElementById('htmlOutput').textContent = prettifiedHTML;
+            
+            // Show visual output
+            document.getElementById('visualOutput').innerHTML = html;
+            
+            // Clear markdown output when processing markdown input
+            document.getElementById('markdownOutput').textContent = 'Markdown output will appear here...';
+        }
+        
+        function updateFromHTML(html) {
+            if (!html.trim()) {
+                document.getElementById('htmlOutput').textContent = 'HTML markup will appear here...';
+                document.getElementById('visualOutput').innerHTML = 'Visual output will appear here...';
+                document.getElementById('markdownOutput').textContent = 'Markdown output will appear here...';
+                return;
+            }
+            
+            const prettifiedHTML = prettifyHTML(html);
+            const markdown = htmlToMarkdown(html);
+            
+            // Show prettified HTML markup
+            document.getElementById('htmlOutput').textContent = prettifiedHTML;
+            
+            // Show visual output
+            document.getElementById('visualOutput').innerHTML = html;
+            
+            // Show markdown output
+            document.getElementById('markdownOutput').textContent = markdown;
+        }
+        
+        function copyHTML() {
+            const htmlContent = document.getElementById('htmlOutput').textContent;
+            navigator.clipboard.writeText(htmlContent).then(() => {
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.textContent = 'Copied!';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 2000);
+            });
+        }
+        
+        function copyMarkdown() {
+            const markdownContent = document.getElementById('markdownOutput').textContent;
+            navigator.clipboard.writeText(markdownContent).then(() => {
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.textContent = 'Copied!';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 2000);
+            });
+        }
+        
+        // File input handler
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const content = e.target.result;
+                    document.getElementById('textInput').value = content;
+                    updateOutput(content);
+                };
+                reader.readAsText(file);
+            }
+        });
+        
+        // Text input handler
+        document.getElementById('textInput').addEventListener('input', function(e) {
+            updateOutput(e.target.value);
+        });
+        
+        // HTML input handler
+        document.getElementById('htmlInput').addEventListener('input', function(e) {
+            updateFromHTML(e.target.value);
+        });
+        
+        // Clear file input when typing in textareas
+        document.getElementById('textInput').addEventListener('focus', function() {
+            document.getElementById('fileInput').value = '';
+            document.getElementById('htmlInput').value = '';
+        });
+        
+        document.getElementById('htmlInput').addEventListener('focus', function() {
+            document.getElementById('fileInput').value = '';
+            document.getElementById('textInput').value = '';
+        });
+    </script>
+</body>
+</html>
