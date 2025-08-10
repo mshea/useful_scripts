@@ -462,60 +462,105 @@ https://creativecommons.org/publicdomain/zero/1.0/
         }
         
         function prettifyHTML(html) {
-            let formatted = html;
+            let result = '';
             let indent = 0;
             const indentSize = 2;
-            
-            // Add line breaks after tags, but be more careful about it
-            formatted = formatted.replace(/></g, '>\n<');
-            
-            const lines = formatted.split('\n');
-            const prettified = [];
+            let i = 0;
             
             // Self-closing and void elements
             const voidElements = new Set(['br', 'hr', 'img', 'input', 'meta', 'link', 'area', 'base', 'col', 'embed', 'source', 'track', 'wbr']);
             
-            for (let line of lines) {
-                line = line.trim();
-                if (!line) continue;
-                
-                // Handle closing tags
-                if (line.startsWith('</')) {
-                    indent = Math.max(0, indent - indentSize);
-                    prettified.push(' '.repeat(indent) + line);
-                    continue;
-                }
-                
-                // Handle opening tags
-                if (line.startsWith('<')) {
-                    const tagMatch = line.match(/<(\w+)/);
-                    if (tagMatch) {
-                        const tagName = tagMatch[1].toLowerCase();
-                        
-                        // Check if it's a self-closing tag or void element
-                        const isSelfClosing = line.endsWith('/>') || voidElements.has(tagName);
-                        
-                        // Check if it's a complete tag (opening and closing on same line)
-                        const hasClosingTag = line.includes('</' + tagName + '>');
-                        
-                        // Add current line with indentation
-                        prettified.push(' '.repeat(indent) + line);
-                        
-                        // Only increase indent if it's not self-closing and doesn't have closing tag on same line
-                        if (!isSelfClosing && !hasClosingTag) {
-                            indent += indentSize;
+            function addLine(content) {
+                result += ' '.repeat(indent) + content + '\n';
+            }
+            
+            while (i < html.length) {
+                if (html[i] === '<') {
+                    // Find the end of this tag
+                    let tagEnd = html.indexOf('>', i);
+                    if (tagEnd === -1) {
+                        // Malformed HTML, just add the rest
+                        addLine(html.substring(i));
+                        break;
+                    }
+                    
+                    let tag = html.substring(i, tagEnd + 1);
+                    
+                    // Check if it's a closing tag
+                    if (tag.startsWith('</')) {
+                        indent = Math.max(0, indent - indentSize);
+                        addLine(tag);
+                        i = tagEnd + 1;
+                        continue;
+                    }
+                    
+                    // Check if it's a self-closing tag or void element
+                    const tagMatch = tag.match(/<(\w+)/);
+                    const tagName = tagMatch ? tagMatch[1].toLowerCase() : '';
+                    const isVoidElement = voidElements.has(tagName);
+                    const isSelfClosing = tag.endsWith('/>');
+                    
+                    if (isVoidElement || isSelfClosing) {
+                        addLine(tag);
+                        i = tagEnd + 1;
+                        continue;
+                    }
+                    
+                    // Look for content after the opening tag
+                    let nextTagStart = html.indexOf('<', tagEnd + 1);
+                    if (nextTagStart === -1) {
+                        // No more tags, add everything
+                        let content = html.substring(tagEnd + 1).trim();
+                        if (content) {
+                            addLine(tag + content);
+                        } else {
+                            addLine(tag);
                         }
-                    } else {
-                        // Malformed tag, just add it
-                        prettified.push(' '.repeat(indent) + line);
+                        break;
+                    }
+                    
+                    let contentBetween = html.substring(tagEnd + 1, nextTagStart).trim();
+                    
+                    // Check if the next tag is the closing tag for this element
+                    let expectedClosingTag = '</' + tagName + '>';
+                    if (html.substring(nextTagStart).startsWith(expectedClosingTag)) {
+                        // This is a complete element on one line
+                        addLine(tag + contentBetween + expectedClosingTag);
+                        i = nextTagStart + expectedClosingTag.length;
+                        continue;
+                    }
+                    
+                    // This is an opening tag that will have nested content
+                    addLine(tag);
+                    indent += indentSize;
+                    i = tagEnd + 1;
+                    
+                    // Add any text content before the next tag
+                    if (contentBetween) {
+                        addLine(contentBetween);
+                        i = nextTagStart;
                     }
                 } else {
-                    // Text content
-                    prettified.push(' '.repeat(indent) + line);
+                    // Find the next tag or end of string
+                    let nextTag = html.indexOf('<', i);
+                    if (nextTag === -1) {
+                        // No more tags, add remaining text
+                        let remaining = html.substring(i).trim();
+                        if (remaining) {
+                            addLine(remaining);
+                        }
+                        break;
+                    }
+                    
+                    let textContent = html.substring(i, nextTag).trim();
+                    if (textContent) {
+                        addLine(textContent);
+                    }
+                    i = nextTag;
                 }
             }
             
-            return prettified.join('\n');
+            return result.trim();
         }
         
         function htmlToMarkdown(html) {
