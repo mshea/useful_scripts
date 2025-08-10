@@ -263,7 +263,10 @@ https://creativecommons.org/publicdomain/zero/1.0/
             <div class="output-panel">
                 <div class="panel-header">
                     HTML Markup
-                    <button class="copy-btn" onclick="copyHTML()">Copy HTML</button>
+                    <div>
+                        <button class="copy-btn" onclick="copyHTML()">Copy HTML</button>
+                        <button class="copy-btn" onclick="saveHTML()" style="margin-left: 5px;">Save HTML</button>
+                    </div>
                 </div>
                 <div class="panel-content">
                     <div id="htmlOutput" class="html-output">HTML markup will appear here...</div>
@@ -273,7 +276,10 @@ https://creativecommons.org/publicdomain/zero/1.0/
             <div class="output-panel">
                 <div class="panel-header">
                     Markdown Output
-                    <button class="copy-btn" onclick="copyMarkdown()">Copy Markdown</button>
+                    <div>
+                        <button class="copy-btn" onclick="copyMarkdown()">Copy Markdown</button>
+                        <button class="copy-btn" onclick="saveMarkdown()" style="margin-left: 5px;">Save Markdown</button>
+                    </div>
                 </div>
                 <div class="panel-content">
                     <div id="markdownOutput" class="html-output">Markdown output will appear here...</div>
@@ -750,6 +756,56 @@ https://creativecommons.org/publicdomain/zero/1.0/
                     btn.textContent = originalText;
                 }, 2000);
             });
+        }
+        
+        function saveHTML() {
+            const htmlContent = document.getElementById('htmlOutput').textContent;
+            if (htmlContent === 'HTML markup will appear here...') {
+                alert('No HTML content to save. Please convert some markdown first.');
+                return;
+            }
+            
+            const blob = new Blob([htmlContent], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'converted.html';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = 'Saved!';
+            setTimeout(() => {
+                btn.textContent = originalText;
+            }, 2000);
+        }
+        
+        function saveMarkdown() {
+            const markdownContent = document.getElementById('markdownOutput').textContent;
+            if (markdownContent === 'Markdown output will appear here...') {
+                alert('No markdown content to save. Please convert some HTML first.');
+                return;
+            }
+            
+            const blob = new Blob([markdownContent], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'converted.md';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = 'Saved!';
+            setTimeout(() => {
+                btn.textContent = originalText;
+            }, 2000);
         }
         
         // File input handler
