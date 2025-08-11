@@ -8,4 +8,4 @@ This repo contains several useful scripts.
 
 **PDF to ePub**. This directory contains a script for converting PDFs to ePub using pdftotext and pandoc, both of which must be installed. It has its own separate readme.
 
-**Markdown Viewer**. A single HTML page, self contained and usable locally in a browser, that converts markdown to HTML or HTML into markdown. It shows the output and gives you a copy and paste or save locally.
+**[Markdown Viewer](markdown-viewer.html)**. A single HTML page, self contained and usable locally in a browser, that converts markdown to HTML or HTML into markdown. It shows the output and gives you a copy and paste or save locally.
