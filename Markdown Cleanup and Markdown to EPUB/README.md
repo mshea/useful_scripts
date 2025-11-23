@@ -68,3 +68,13 @@ python3 scripts/build_epub.py "Book Name"
 2. Run `clean_markdown.py` to clean and number the files
 3. Run `build_epub.py "Book Name"` to generate the EPUB
 4. Find your EPUB in the root directory
+
+---
+
+## License
+
+CC0 1.0 Universal (CC0 1.0) Public Domain Dedication
+
+To the extent possible under law, the author(s) have dedicated all copyright and related and neighboring rights to this software to the public domain worldwide. This software is distributed without any warranty.
+
+You should have received a copy of the CC0 Public Domain Dedication along with this software. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
