@@ -21,11 +21,15 @@ Cleans markdown files from markdownload format.
 
 **Usage:**
 ```bash
-python3 scripts/clean_markdown.py
+python3 scripts/clean_markdown.py <input_dir> <output_dir>
 ```
 
-**Input:** `original_markdown/` directory
-**Output:** `clean_markdown/` directory
+**Example:**
+```bash
+python3 scripts/clean_markdown.py original_markdown/my-book clean_markdown/my-book
+```
+
+**Note:** The output directory will be created if it doesn't exist.
 
 ---
 
@@ -65,8 +69,8 @@ python3 scripts/build_epub.py "Book Name"
 ## Workflow
 
 1. Place markdownload files in `original_markdown/[book-name]/`
-2. Run `clean_markdown.py` to clean and number the files
-3. Run `build_epub.py "Book Name"` to generate the EPUB
+2. Run `clean_markdown.py original_markdown/[book-name] clean_markdown/[book-name]` to clean and number the files
+3. Run `build_epub.py "[book-name]"` to generate the EPUB
 4. Find your EPUB in the root directory
 
 ---

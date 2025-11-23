@@ -259,88 +259,104 @@ def clean_content(content, title, images_dir):
     return content
 
 
-def clean_markdown_files(source_base, dest_base):
-    """Process all markdown files from source to destination."""
-    source_path = Path(source_base)
-    dest_path = Path(dest_base)
+def clean_markdown_files(book_dir, dest_dir):
+    """Process all markdown files from a specific book directory."""
+    dest_path = Path(dest_dir)
 
-    # Get all book directories
-    book_dirs = [d for d in source_path.iterdir() if d.is_dir() and not d.name.startswith('.')]
+    print(f"\nProcessing book: {book_dir.name}")
 
-    for book_dir in book_dirs:
-        print(f"\nProcessing book: {book_dir.name}")
+    # Get files sorted by timestamp
+    files = get_files_by_timestamp(str(book_dir))
 
-        # Get files sorted by timestamp
-        files = get_files_by_timestamp(str(book_dir))
+    if not files:
+        print(f"  No markdown files found in {book_dir.name}")
+        return False
 
-        if not files:
-            print(f"  No markdown files found in {book_dir.name}")
-            continue
+    # Find common prefix and suffix in all filenames
+    filenames = [Path(f).name for f in files]
+    common_prefix = find_common_prefix(filenames)
+    common_suffix = find_common_suffix(filenames)
 
-        # Find common prefix and suffix in all filenames
-        filenames = [Path(f).name for f in files]
-        common_prefix = find_common_prefix(filenames)
-        common_suffix = find_common_suffix(filenames)
+    if common_prefix:
+        print(f"  Removing common prefix: '{common_prefix.rstrip(' - ')}'")
+    if common_suffix:
+        print(f"  Removing common suffix: '{common_suffix.lstrip(' - ')}'")
 
-        if common_prefix:
-            print(f"  Removing common prefix: '{common_prefix.rstrip(' - ')}'")
-        if common_suffix:
-            print(f"  Removing common suffix: '{common_suffix.lstrip(' - ')}'")
+    # Create destination directory
+    dest_path.mkdir(parents=True, exist_ok=True)
 
-        # Create destination directory
-        dest_book_dir = dest_path / book_dir.name
-        dest_book_dir.mkdir(parents=True, exist_ok=True)
+    # Create images directory
+    images_dir = dest_path / 'images'
+    images_dir.mkdir(exist_ok=True)
 
-        # Create images directory
-        images_dir = dest_book_dir / 'images'
-        images_dir.mkdir(exist_ok=True)
+    # Process each file
+    for chapter_num, filepath in enumerate(files, start=1):
+        original_filename = Path(filepath).name
 
-        # Process each file
-        for chapter_num, filepath in enumerate(files, start=1):
-            original_filename = Path(filepath).name
+        # Clean the filename
+        cleaned_name = clean_filename(original_filename, common_prefix, common_suffix)
+        title = cleaned_name.replace('.md', '')
 
-            # Clean the filename
-            cleaned_name = clean_filename(original_filename, common_prefix, common_suffix)
-            title = cleaned_name.replace('.md', '')
+        # Format with chapter number (zero-padded to 2 digits)
+        new_filename = f"{chapter_num:02d} - {cleaned_name}"
 
-            # Format with chapter number (zero-padded to 2 digits)
-            new_filename = f"{chapter_num:02d} - {cleaned_name}"
+        # Read original content
+        with open(filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
 
-            # Read original content
-            with open(filepath, 'r', encoding='utf-8') as f:
-                content = f.read()
+        # Clean content
+        cleaned_content = clean_content(content, title, images_dir)
 
-            # Clean content
-            cleaned_content = clean_content(content, title, images_dir)
+        # Write to destination
+        dest_file = dest_path / new_filename
+        with open(dest_file, 'w', encoding='utf-8') as f:
+            f.write(cleaned_content)
 
-            # Write to destination
-            dest_file = dest_book_dir / new_filename
-            with open(dest_file, 'w', encoding='utf-8') as f:
-                f.write(cleaned_content)
+        print(f"  [{chapter_num:02d}] {original_filename} -> {new_filename}")
 
-            print(f"  [{chapter_num:02d}] {original_filename} -> {new_filename}")
-
-        print(f"  Processed {len(files)} files")
+    print(f"  Processed {len(files)} files")
+    return True
 
 
 def main():
     """Main entry point."""
-    # Get the script's directory
-    script_dir = Path(__file__).parent.parent
+    import sys
 
-    source_dir = script_dir / "original_markdown"
-    dest_dir = script_dir / "clean_markdown"
-
-    if not source_dir.exists():
-        print(f"Error: Source directory not found: {source_dir}")
+    # Check if input and output directories were provided
+    if len(sys.argv) < 3:
+        print("Error: Please specify input and output directories.")
+        print("\nUsage: python3 clean_markdown.py <input_dir> <output_dir>")
+        print("\nExample:")
+        print("  python3 clean_markdown.py original_markdown/my-book clean_markdown/my-book")
         return 1
 
-    print(f"Source: {source_dir}")
-    print(f"Destination: {dest_dir}")
+    input_dir = Path(sys.argv[1])
+    output_dir = Path(sys.argv[2])
 
-    clean_markdown_files(source_dir, dest_dir)
+    if not input_dir.exists():
+        print(f"Error: Input directory not found: {input_dir}")
+        return 1
 
-    print("\n✓ Cleaning complete!")
+    if not input_dir.is_dir():
+        print(f"Error: Input path is not a directory: {input_dir}")
+        return 1
+
+    print(f"\n{'='*60}")
+    print(f"Cleaning markdown for: {input_dir.name}")
+    print(f"{'='*60}")
+    print(f"Source: {input_dir}")
+    print(f"Destination: {output_dir}")
+
+    success = clean_markdown_files(input_dir, output_dir)
+
+    if not success:
+        print(f"Failed to clean markdown for {input_dir.name}")
+        return 1
+
+    print(f"\n{'='*60}")
+    print("✓ Cleaning complete!")
+    print(f"{'='*60}")
+
     return 0
 
 
