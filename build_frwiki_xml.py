@@ -790,7 +790,8 @@ def collect_titles(xml_path):
         slug = base if n == 1 else f'{base}-{n}'
         _title_map[title.lower()] = f'pages/{cat_slug}/{slug}.html'
 
-    xml.sax.parse(str(xml_path), _SAXHandler(on_page))
+    with open(xml_path, 'rb') as f:
+        xml.sax.parse(f, _SAXHandler(on_page))
 
 
 def write_pages(xml_path, dest, site_name, attribution):
@@ -860,7 +861,8 @@ def write_pages(xml_path, dest, site_name, attribution):
         if count % 2000 == 0:
             print(f'  {count:,}/{len(_title_map):,}', flush=True)
 
-    xml.sax.parse(str(xml_path), _SAXHandler(on_page))
+    with open(xml_path, 'rb') as f:
+        xml.sax.parse(f, _SAXHandler(on_page))
     print(f'  {count:,}/{len(_title_map):,} done', flush=True)
     return cat_entries, search_items
 
