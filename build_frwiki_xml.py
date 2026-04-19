@@ -566,7 +566,7 @@ def convert_page(wikitext):
 CSS = """\
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-  background:#fff;color:#000;line-height:1.7;font-size:16px}
+  background:#fff;color:#000;line-height:1.7;font-size:20px}
 a{color:#000;text-decoration:underline}
 a:hover{text-decoration:none}
 /* header */
@@ -641,7 +641,7 @@ th{background:#f0f0f0;font-weight:600}
 /* mobile */
 @media(max-width:600px){
   article h1{font-size:1.3rem}
-  body{font-size:15px}
+  body{font-size:19px}
   .entry-grid{columns:1}
   aside.infobox{float:none;max-width:100%;margin:0 0 1rem}
 }
@@ -973,6 +973,7 @@ def main():
 
     xml_path = args.xml or Path(input('Path to XML dump: ').strip())
     out_path = args.out or Path(input('Output directory: ').strip())
+    out_path = out_path / 'forgotten_realms_wiki'
 
     if not xml_path.exists():
         parser.error(f'XML file not found: {xml_path}')
