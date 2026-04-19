@@ -40,12 +40,21 @@ Usage
     # Or pass paths directly to skip the prompts:
     python3 build_frwiki_xml.py dump.xml ./wiki-html
 
+    # Random sample of N articles (useful for testing):
+    python3 build_frwiki_xml.py dump.xml ./wiki-html --sample 300
+
+    # Only articles whose title contains TEXT:
+    python3 build_frwiki_xml.py dump.xml ./wiki-html --filter "Elminster"
+
+    # Stop after N articles:
+    python3 build_frwiki_xml.py dump.xml ./wiki-html --limit 1000
+
 Output layout
 -------------
-    index.html                  home page with category grid and live search
+    index.html                  home page with category list and live search
     style.css                   stylesheet (black & white, mobile-friendly)
     search.js                   client-side search logic
-    search-data.js              generated title index (~6 MB for 70k articles)
+    search-data.js              generated title index (~5 MB for 56k articles)
     pages/<category>/<slug>.html   one file per article
 
 All hrefs are root-relative and resolved via <base href>, so the folder can
@@ -60,8 +69,9 @@ Two SAX passes over the XML (streaming, low memory):
             title → output-path map used to resolve [[wikilinks]].
 
   Pass 2 — for each article: strip citations and non-article templates with
-            mwparserfromhell, extract the infobox as a floated aside table,
-            then convert the remaining wikitext line-by-line to HTML.
+            mwparserfromhell, extract the infobox as a full-width block at the
+            top of the page, then convert the remaining wikitext line-by-line
+            to HTML. Stub articles (no prose and no infobox) are skipped.
 
 Configuration
 -------------
@@ -72,6 +82,7 @@ might want to adjust. Paths are supplied at runtime, not hardcoded here.
 import argparse
 import html as hl
 import json
+import random
 import re
 import xml.sax
 import xml.sax.handler
@@ -214,8 +225,9 @@ def detect_category(wikitext):
 # ---------------------------------------------------------------------------
 
 # Pre-compiled patterns used by the inline converter
-_RE_REF_SELF  = re.compile(r'<ref\b[^>]*/>', re.I)
-_RE_REF_BLOCK = re.compile(r'<ref\b[^>]*>.*?</ref>', re.I | re.S)
+_RE_REF_SELF    = re.compile(r'<ref\b[^>]*/>', re.I)
+_RE_REF_BLOCK   = re.compile(r'<ref\b[^>]*>.*?</ref>', re.I | re.S)
+_RE_REF_CONTENT = re.compile(r'<ref\b[^>]*>(.*?)</ref>', re.I | re.S)
 _RE_NOWIKI    = re.compile(r'<nowiki>(.*?)</nowiki>', re.I | re.S)
 _RE_COMMENT   = re.compile(r'<!--.*?-->', re.S)
 _RE_GALLERY   = re.compile(r'<gallery\b[^>]*>.*?</gallery>', re.I | re.S)
@@ -275,6 +287,9 @@ def _replace_wikilink(m):
     if ns_lower in ('file', 'image', 'category', 'user', 'user talk',
                     'template', 'talk', 'special', 'help', 'wikipedia'):
         return ''
+    # Strip interlanguage links (2–3 letter language codes like fr:, de:, es:)
+    if re.match(r'^[a-z]{2,3}$', ns_lower):
+        return ''
 
     target, sep, display = inner.partition('|')
     target  = target.strip()
@@ -285,7 +300,12 @@ def _replace_wikilink(m):
         target, fragment = target.split('#', 1)
         anchor = '#' + re.sub(r'[^\w\-]', '_', fragment)
 
-    disp = hl.escape(display)
+    # Apply bold/italic to display before HTML-escaping, then restore the tags
+    disp = _RE_BOLD_EM.sub(r'<strong>\1</strong>', display)
+    disp = _RE_EM.sub(r'<em>\1</em>', disp)
+    disp = hl.escape(disp)
+    disp = (disp.replace('&lt;strong&gt;', '<strong>').replace('&lt;/strong&gt;', '</strong>')
+                .replace('&lt;em&gt;', '<em>').replace('&lt;/em&gt;', '</em>'))
     path = _title_map.get(target.lower())
     if path:
         return f'<a href="{safe_href(path)}{anchor}">{disp}</a>'
@@ -403,6 +423,47 @@ def render_wikitable(block_lines):
     return '\n'.join(out)
 
 
+def _collect_sources(wikitext):
+    """
+    Extract unique source names from <ref> citation templates in raw wikitext.
+    Returns a list of plain-text strings (deduplicated, in order of first appearance).
+    """
+    seen    = set()
+    sources = []
+    for m in _RE_REF_CONTENT.finditer(wikitext):
+        content = m.group(1).strip()
+        for tpl_m in _RE_TPL.finditer(content):
+            inner     = tpl_m.group(1)
+            name_part, _, rest = inner.partition('|')
+            tpl_name  = name_part.strip().lower()
+            if not tpl_name.startswith(('cite ', 'cite/', 'citation')):
+                continue
+            params = [p.strip() for p in rest.split('|')] if rest else []
+            slash = name_part.find('/')
+            if slash != -1:
+                rest_name = name_part[slash + 1:]
+                second_slash = rest_name.find('/')
+                if second_slash != -1:
+                    before = rest_name[:second_slash].strip()
+                    after  = rest_name[second_slash + 1:].strip()
+                    # Magazine: Cite dragon/123/Article Title -> "Article Title"
+                    # Book edition: Cite book/Title/Hardcover -> "Title"
+                    title = after if re.match(r'^\d+$', before) else before
+                else:
+                    title = rest_name.strip()
+            else:
+                title = next((p.split('=', 1)[1].strip()
+                               for p in params if re.match(r'title\s*=', p, re.I)), '')
+                if not title:
+                    title = next((p for p in params
+                                  if '=' not in p and not p.strip().isdigit()), '')
+            title = title.strip("'\"")
+            if title and title not in seen:
+                seen.add(title)
+                sources.append(title)
+    return sources
+
+
 def convert_page(wikitext):
     """
     Convert a full article's wikitext to (infobox_html, body_html, categories).
@@ -410,6 +471,8 @@ def convert_page(wikitext):
     Uses mwparserfromhell to cleanly extract the infobox template and category
     links before doing line-by-line conversion of the body text.
     """
+    sources = _collect_sources(wikitext)
+
     # Strip block-level noise before parsing
     wikitext = _RE_COMMENT.sub('', wikitext)
     wikitext = _RE_GALLERY.sub('', wikitext)
@@ -443,9 +506,6 @@ def convert_page(wikitext):
                 pass
 
     body = str(code)
-    # Clean up orphaned bracket/quote punctuation left by removed links
-    body = re.sub(r'\[\[|\]\]', '', body)
-    body = re.sub(r"'{2,3}", '', body)
 
     # Line-by-line conversion
     lines = body.split('\n')
@@ -485,6 +545,18 @@ def convert_page(wikitext):
             close_lists()
             level = len(m.group(1))
             text  = m.group(2)
+            if text.strip().lower() in ('further reading', 'external links', 'external link',
+                                        'connections', 'appendix', 'gallery', 'appearances',
+                                        'references', 'notes', 'see also'):
+                # Skip this heading and all lines until the next same-or-higher heading
+                i += 1
+                while i < len(lines):
+                    nxt = lines[i].rstrip()
+                    nm = re.match(r'^(={2,6})\s*(.+?)\s*\1\s*$', nxt)
+                    if nm and len(nm.group(1)) <= level:
+                        break
+                    i += 1
+                continue
             aid   = re.sub(r'[^\w\-]', '_', text)
             out.append(f'<h{level} id="{aid}">{inline(text)}</h{level}>')
             i += 1
@@ -511,6 +583,15 @@ def convert_page(wikitext):
                 out.append('<ol>')
                 in_ol = True
             out.append(f'<li>{inline(ln.lstrip("#").strip())}</li>')
+            i += 1
+            continue
+
+        # Definition term:  ; term  (often used as a bold label before : definitions)
+        if ln.startswith(';'):
+            close_lists()
+            term = ln.lstrip(';').strip().rstrip(':').strip()
+            if term:
+                out.append(f'<p><strong>{inline(term)}</strong></p>')
             i += 1
             continue
 
@@ -551,12 +632,37 @@ def convert_page(wikitext):
         # Paragraph
         close_lists()
         text = inline(ln.strip())
-        if text:
+        if text and text != '<br>':
             out.append(f'<p>{text}</p>')
         i += 1
 
     close_lists()
-    return infobox_html, '\n'.join(out), categories
+
+    # Remove headings with no content before the next same-or-shallower heading.
+    # A deeper sub-heading (e.g. h3 inside h2) is not content by itself, but
+    # non-heading items (p, ul, table…) anywhere in the section count.
+    filtered = []
+    for idx, item in enumerate(out):
+        m_lvl = re.match(r'<h([2-6])[\s>]', item)
+        if m_lvl:
+            level = int(m_lvl.group(1))
+            has_content = False
+            for subsequent in out[idx + 1:]:
+                if not subsequent.strip():
+                    continue
+                sm = re.match(r'<h([2-6])[\s>]', subsequent)
+                if sm:
+                    if int(sm.group(1)) <= level:
+                        break  # reached peer/parent heading with no real content
+                    # deeper heading — keep scanning
+                else:
+                    has_content = True
+                    break
+            if not has_content:
+                continue
+        filtered.append(item)
+
+    return infobox_html, '\n'.join(filtered), categories, sources
 
 
 # ---------------------------------------------------------------------------
@@ -565,85 +671,35 @@ def convert_page(wikitext):
 
 CSS = """\
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-  background:#fff;color:#000;line-height:1.7;font-size:20px}
-a{color:#000;text-decoration:underline}
-a:hover{text-decoration:none}
-/* header */
-#hdr{background:#000;color:#fff;padding:.7rem 1rem;position:sticky;top:0;
-  z-index:100;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}
-#site-title{font-size:1rem;font-weight:700;color:#fff;
-  white-space:nowrap;text-decoration:none}
-#site-title:hover{opacity:.8;text-decoration:none}
-/* search */
-#search-wrap{position:relative;flex:1;min-width:140px}
-#search-box{width:100%;padding:.4rem .7rem;border:none;border-radius:2px;
-  font-size:.95rem;background:#fff;color:#000}
-#search-box:focus{outline:2px solid #fff}
-#search-res{position:absolute;top:calc(100% + 2px);left:0;right:0;
-  background:#fff;border:1px solid #000;max-height:60vh;overflow-y:auto;
-  z-index:200;display:none;box-shadow:2px 2px 0 #000}
-#search-res.on{display:block}
-.sr{display:flex;justify-content:space-between;align-items:baseline;
-  padding:.45rem .9rem;border-bottom:1px solid #ccc;color:#000;
-  text-decoration:none;font-size:.9rem}
-.sr:hover{background:#f0f0f0}
-.sr .cat{font-size:.72rem;color:#666;margin-left:.5rem;white-space:nowrap}
-.sr-none{padding:.7rem 1rem;color:#666;font-size:.9rem}
-/* layout */
+body{font-family:system-ui,sans-serif;font-size:18px;line-height:1.7}
+a{color:#000}
 main{max-width:820px;margin:0 auto;padding:1.5rem 1rem}
-.bc{font-size:.8rem;color:#666;margin-bottom:1rem}
-/* article */
-article h1{font-size:1.75rem;margin-bottom:.9rem;line-height:1.25}
-article h2{font-size:1.2rem;margin:1.6rem 0 .45rem;
-  border-bottom:1px solid #000;padding-bottom:.2rem}
-article h3{font-size:1.05rem;margin:1.2rem 0 .35rem}
-article h4,article h5,article h6{font-size:1rem;margin:1rem 0 .3rem}
-article p{margin-bottom:.8rem}
-p.indent{margin-left:1.5rem;margin-bottom:.5rem}
-p.redirect{font-style:italic;color:#555}
-article ul,article ol{margin:0 0 .8rem 1.5rem}
-article li{margin-bottom:.2rem}
-article hr{border:none;border-top:1px solid #000;margin:1.5rem 0}
-article code{background:#f0f0f0;padding:.1em .3em;border-radius:2px;font-size:.88em}
-.nl{color:#888;text-decoration:none}
-.attr{margin-top:2rem;padding-top:.8rem;border-top:1px solid #ccc;
-  font-size:.72rem;color:#999}
-.cats-list{margin-top:.5rem;font-size:.8rem;color:#666}
-.cats-list a{color:#555;margin-right:.5rem}
-/* infobox */
-aside.infobox{float:right;clear:right;margin:0 0 1rem 1.5rem;padding:.75rem;
-  border:1px solid #000;font-size:.85rem;max-width:280px;min-width:180px;
-  overflow-wrap:break-word}
-aside.infobox .infobox-title{font-weight:700;margin-bottom:.4rem;font-size:.9rem}
-aside.infobox table{width:100%;border-collapse:collapse}
-aside.infobox th{text-align:left;padding:.2rem .4rem;font-weight:600;
-  vertical-align:top;width:40%;border-bottom:1px solid #ddd;font-size:.8rem}
-aside.infobox td{padding:.2rem .4rem;vertical-align:top;
-  border-bottom:1px solid #ddd;font-size:.8rem}
-/* wiki tables */
-table{border-collapse:collapse;margin-bottom:.8rem;font-size:.9rem;
-  max-width:100%;display:block;overflow-x:auto}
+h1{font-size:1.75rem;margin:.5rem 0 .9rem;line-height:1.25}
+h2{font-size:1.2rem;margin:1.6rem 0 .4rem}
+h3,h4,h5,h6{font-size:1rem;margin:1.2rem 0 .3rem}
+p{margin-bottom:.8rem}
+ul,ol{margin:0 0 .8rem 1.5rem}
+article{display:flow-root}
+aside.infobox{width:100%;margin:0 0 1.5rem 0;padding:.75rem;border:1px solid #000;overflow-wrap:break-word}
+aside.infobox .infobox-title{font-weight:700;margin-bottom:.4rem}
+aside.infobox table{width:100%;border-collapse:collapse;display:table}
+aside.infobox th,aside.infobox td{padding:.2rem .4rem;vertical-align:top;border-bottom:1px solid #ddd;text-align:left}
+aside.infobox th{font-weight:600;width:30%}
+table{border-collapse:collapse;margin-bottom:.8rem;max-width:100%;display:block;overflow-x:auto}
 th,td{border:1px solid #ccc;padding:.3rem .5rem;text-align:left;vertical-align:top}
 th{background:#f0f0f0;font-weight:600}
-/* home page category grid */
-.cats{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
-  gap:1rem;margin-top:1rem}
-.cat-card{background:#fff;border:1px solid #000;padding:1rem;
-  text-decoration:none;color:#000;display:block}
-.cat-card:hover{background:#f0f0f0;text-decoration:none}
-.cat-card h2{font-size:1rem;margin-bottom:.25rem;border:none;padding:0}
-.cat-card p{font-size:.82rem;color:#555}
-/* category index listing */
+#search-wrap{position:relative;margin-bottom:1rem}
+#search-box{width:100%;padding:.4rem .7rem;border:1px solid #ccc;font-size:inherit}
+#search-res{position:absolute;top:calc(100% + 2px);left:0;right:0;background:#fff;border:1px solid #000;max-height:60vh;overflow-y:auto;z-index:200;display:none}
+#search-res.on{display:block}
+.sr{display:block;padding:.4rem .9rem;border-bottom:1px solid #ccc;text-decoration:none}
+.sr:hover{background:#f0f0f0}
+.cats-list{margin-top:1.5rem;padding-top:.8rem;border-top:1px solid #ccc;color:#666}
 .entry-grid{columns:2;column-gap:1.5rem}
-.entry-grid a{display:block;padding:.15rem 0;font-size:.92rem;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-/* mobile */
+.entry-grid a{display:block;padding:.15rem 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:600px){
-  article h1{font-size:1.3rem}
-  body{font-size:19px}
+  h1{font-size:1.3rem}
   .entry-grid{columns:1}
-  aside.infobox{float:none;max-width:100%;margin:0 0 1rem}
 }
 """
 
@@ -707,7 +763,7 @@ SEARCH_JS = """\
 
 
 def make_page_header(title_text, rel_path, site_name):
-    """Return the opening HTML for any page, including sticky search header."""
+    """Return the opening HTML for any page."""
     depth = len(Path(rel_path).parts) - 1
     base  = '../' * depth
     return f"""\
@@ -721,14 +777,12 @@ def make_page_header(title_text, rel_path, site_name):
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header id="hdr">
-  <a href="index.html" id="site-title">{hl.escape(site_name)}</a>
-  <div id="search-wrap">
-    <input id="search-box" type="search" placeholder="Search\u2026"
-      autocomplete="off" spellcheck="false">
-    <div id="search-res"></div>
-  </div>
-</header>"""
+<main>
+<div id="search-wrap">
+  <input id="search-box" type="search" placeholder="Search\u2026"
+    autocomplete="off" spellcheck="false">
+  <div id="search-res"></div>
+</div>"""
 
 
 PAGE_FOOTER = """\
@@ -794,11 +848,13 @@ def collect_titles(xml_path):
         xml.sax.parse(f, _SAXHandler(on_page))
 
 
-def write_pages(xml_path, dest, site_name, attribution):
+def write_pages(xml_path, dest, site_name, attribution, limit=0, filter_titles=None):
     """
     Pass 2 — convert every article and write its HTML file.
 
     Returns (cat_entries, search_items) for use in later passes.
+    limit: stop after this many articles (0 = no limit)
+    filter_titles: if set, only process articles whose title contains this string (case-insensitive)
     """
     cat_entries:  dict[str, list] = defaultdict(list)
     search_items: list[dict]      = []
@@ -806,17 +862,22 @@ def write_pages(xml_path, dest, site_name, attribution):
 
     def on_page(title, wikitext):
         nonlocal count
+        if limit and count >= limit:
+            return
+        if filter_titles and filter_titles.lower() not in title.lower():
+            return
 
         rel_path = _title_map.get(title.lower())
         if not rel_path:
             return
 
         try:
-            infobox_html, body_html, categories = convert_page(wikitext)
+            infobox_html, body_html, categories, sources = convert_page(wikitext)
         except Exception as e:
             infobox_html = ''
             body_html    = f'<p>[parse error: {hl.escape(str(e))}]</p>'
             categories   = []
+            sources      = []
 
         parts    = Path(rel_path).parts        # ('pages', 'cat-slug', 'slug.html')
         broad    = parts[1].replace('-', ' ').title() if len(parts) > 1 else 'Miscellaneous'
@@ -828,23 +889,26 @@ def write_pages(xml_path, dest, site_name, attribution):
             f'{hl.escape(title)}'
         )
 
+        # Skip stubs: no paragraph content and no infobox
+        if not infobox_html and '<p>' not in body_html:
+            return
+
         cats_footer = ''
         if categories:
-            links = ' '.join(
-                f'<a href="index.html">{hl.escape(c)}</a>'
-                for c in categories[:8]
-            )
-            cats_footer = f'<div class="cats-list">Categories: {links}</div>'
+            cats_footer = '<div class="cats-list">Categories: ' + \
+                ' · '.join(hl.escape(c) for c in categories[:8]) + '</div>'
 
         html = (
             make_page_header(title, rel_path, site_name)
-            + '\n<main>'
             + f'\n<div class="bc">{breadcrumb}</div>'
             + '\n<article>'
             + f'\n<h1>{hl.escape(title)}</h1>'
             + '\n' + infobox_html
             + '\n' + body_html
             + '\n' + cats_footer
+            + ('\n<h2>Sources</h2>\n<ul>\n'
+               + '\n'.join(f'<li>{hl.escape(s)}</li>' for s in sources)
+               + '\n</ul>' if sources else '')
             + f'\n<div class="attr">{hl.escape(attribution)}</div>'
             + '\n</article>\n</main>'
             + '\n' + PAGE_FOOTER
@@ -879,10 +943,9 @@ def write_category_indexes(dest, cat_entries, site_name):
         )
         html = (
             make_page_header(broad, rel_idx, site_name)
-            + '\n<main>'
             + f'\n<div class="bc"><a href="index.html">Home</a> › {hl.escape(broad)}</div>'
             + f'\n<article><h1>{hl.escape(broad)}</h1>'
-            + f'\n<p style="color:#666;margin-bottom:1.5rem">{len(entries):,} articles</p>'
+            + f'\n<p style="margin-bottom:1.5rem">{len(entries):,} articles</p>'
             + f'\n<div class="entry-grid">{links}</div>'
             + '\n</article>\n</main>'
             + '\n' + PAGE_FOOTER
@@ -901,20 +964,12 @@ def write_search_index(dest, search_items):
 
 
 def write_home_page(dest, cat_entries, search_items, site_name, attribution):
-    """Write the root index.html with the category grid and search bar."""
-    cards = ''
-    for cat in sorted(cat_entries):
-        count    = len(cat_entries[cat])
-        cat_slug = slugify(cat)
-        desc     = CAT_DESCRIPTIONS.get(cat, '')
-        cards += (
-            f'<a class="cat-card" href="{safe_href(f"pages/{cat_slug}/index.html")}">'
-            f'<h2>{hl.escape(cat)}</h2>'
-            f'<p>{desc}</p>'
-            f'<p style="font-size:.75rem;color:#999;margin-top:.3rem">'
-            f'{count:,} articles</p>'
-            f'</a>\n'
-        )
+    """Write the root index.html with the category list and search bar."""
+    links = '\n'.join(
+        f'<li><a href="{safe_href(f"pages/{slugify(cat)}/index.html")}">'
+        f'{hl.escape(cat)}</a> ({len(cat_entries[cat]):,})</li>'
+        for cat in sorted(cat_entries)
+    )
 
     total = len(search_items)
     html = f"""\
@@ -927,21 +982,18 @@ def write_home_page(dest, cat_entries, search_items, site_name, attribution):
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header id="hdr">
-  <a href="index.html" id="site-title">{hl.escape(site_name)}</a>
-  <div id="search-wrap">
-    <input id="search-box" type="search" placeholder="Search {total:,} articles\u2026"
-      autocomplete="off" spellcheck="false">
-    <div id="search-res"></div>
-  </div>
-</header>
 <main>
+<div id="search-wrap">
+  <input id="search-box" type="search" placeholder="Search {total:,} articles\u2026"
+    autocomplete="off" spellcheck="false">
+  <div id="search-res"></div>
+</div>
 <article>
 <h1>{hl.escape(site_name)}</h1>
-<p style="color:#666;margin-bottom:1.5rem">{total:,} articles &middot; {hl.escape(attribution)}</p>
-<div class="cats">
-{cards}
-</div>
+<p style="margin-bottom:1.5rem">{total:,} articles &middot; {hl.escape(attribution)}</p>
+<ul>
+{links}
+</ul>
 </article>
 </main>
 <script src="search-data.js"></script>
@@ -969,6 +1021,18 @@ def main():
         metavar='output-dir',
         help='Directory to write the HTML site into (created if it does not exist)',
     )
+    parser.add_argument(
+        '--limit', type=int, default=0, metavar='N',
+        help='Stop after converting N articles (default: no limit)',
+    )
+    parser.add_argument(
+        '--filter', dest='filter_titles', default='', metavar='TEXT',
+        help='Only convert articles whose title contains TEXT (case-insensitive)',
+    )
+    parser.add_argument(
+        '--sample', type=int, default=0, metavar='N',
+        help='Convert a random sample of N articles',
+    )
     args = parser.parse_args()
 
     xml_path = args.xml or Path(input('Path to XML dump: ').strip())
@@ -990,8 +1054,16 @@ def main():
     collect_titles(xml_path)
     print(f'  {len(_title_map):,} articles', flush=True)
 
+    if args.sample:
+        keys = random.sample(list(_title_map.keys()), min(args.sample, len(_title_map)))
+        for k in list(_title_map):
+            if k not in set(keys):
+                del _title_map[k]
+        print(f'  sampled {len(_title_map):,} articles', flush=True)
+
     print('Pass 2: converting articles...', flush=True)
-    cat_entries, search_items = write_pages(xml_path, out_path, SITE_NAME, ATTRIBUTION)
+    cat_entries, search_items = write_pages(xml_path, out_path, SITE_NAME, ATTRIBUTION,
+                                            limit=args.limit, filter_titles=args.filter_titles)
 
     print('Pass 3: category indexes...', flush=True)
     write_category_indexes(out_path, cat_entries, SITE_NAME)
