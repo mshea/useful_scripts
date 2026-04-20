@@ -35,19 +35,25 @@ Requirements
 Usage
 -----
     # Prompts for paths interactively:
-    python3 build_frwiki_xml.py
+    python3 build_forgotten_realms_wiki_to_html.py
 
     # Or pass paths directly to skip the prompts:
-    python3 build_frwiki_xml.py dump.xml ./wiki-html
+    python3 build_forgotten_realms_wiki_to_html.py dump.xml ./wiki-html
 
     # Random sample of N articles (useful for testing):
-    python3 build_frwiki_xml.py dump.xml ./wiki-html --sample 300
+    python3 build_forgotten_realms_wiki_to_html.py dump.xml ./wiki-html --sample 300
 
     # Only articles whose title contains TEXT:
-    python3 build_frwiki_xml.py dump.xml ./wiki-html --filter "Elminster"
+    python3 build_forgotten_realms_wiki_to_html.py dump.xml ./wiki-html --filter "Elminster"
 
     # Stop after N articles:
-    python3 build_frwiki_xml.py dump.xml ./wiki-html --limit 1000
+    python3 build_forgotten_realms_wiki_to_html.py dump.xml ./wiki-html --limit 1000
+
+    # Regenerate style.css and search.js only (no article conversion):
+    python3 build_forgotten_realms_wiki_to_html.py --assets-only ./wiki-html
+
+    # Use 8 parallel worker processes for faster conversion:
+    python3 build_forgotten_realms_wiki_to_html.py dump.xml ./wiki-html --workers 8
 
 Output layout
 -------------
@@ -80,6 +86,7 @@ might want to adjust. Paths are supplied at runtime, not hardcoded here.
 """
 
 import argparse
+from concurrent.futures import ProcessPoolExecutor
 import html as hl
 import json
 import random
@@ -143,20 +150,6 @@ WIKICAT_RULES = [
     ('religion',    'Deities & Religion'), ('deity', 'Deities & Religion'),
 ]
 
-# Short description shown on each category card on the home page.
-CAT_DESCRIPTIONS = {
-    'Characters':         'NPCs, heroes, villains, and historical figures',
-    'Creatures':          'Monsters, races, and beings of Faerûn',
-    'Places':             'Cities, regions, planes, and geography',
-    'Spells':             'Arcane and divine spells across all editions',
-    'Items & Artifacts':  'Magic items, weapons, armor, and relics',
-    'Books & Media':      'Novels, sourcebooks, adventures, and comics',
-    'Organizations':      'Guilds, orders, factions, and companies',
-    'Deities & Religion': 'Gods, faiths, and divine powers',
-    'Classes':            'Character classes and abilities',
-    'Miscellaneous':      'Everything else',
-}
-
 # Infobox params that are purely visual (images, captions) — skipped in output.
 SKIP_INFOBOX_PARAMS = {'image', 'caption', 'caption2', 'map', 'map caption', 'map image'}
 
@@ -175,8 +168,12 @@ PASSTHROUGH_TEMPLATES = {'w', 'wikipedia', 'smallcaps', 'nowrap', 'lang', 'p', '
 # Namespace prefixes whose wikilinks are stripped (no page generated for them).
 STRIP_LINK_NAMESPACES = (
     'file:', 'image:', 'category:', 'user:', 'user talk:',
-    'template:', 'talk:', 'special:', 'help:',
+    'template:', 'talk:', 'special:', 'help:', 'wikipedia:',
 )
+
+# Derived sets used internally — do not edit these directly.
+_STRIP_NS      = frozenset(ns.rstrip(':') for ns in STRIP_LINK_NAMESPACES)
+_INFOBOX_NAMES = frozenset(INFOBOX_TO_CAT) | {'adventure'}
 
 
 # ---------------------------------------------------------------------------
@@ -242,8 +239,9 @@ _RE_TPL       = re.compile(r'\{\{((?:[^{}]|\{\{[^{}]*\}\})*)\}\}')
 _RE_SAFE_TAGS = re.compile(r'<(?!/?(strong|em|br|a|b|i|code|span|sup|sub)[\s>/])[^>]*>',
                            re.I)
 
-# Populated during pass 1; used by the inline converter to resolve wikilinks.
-_title_map: dict[str, str] = {}
+# Populated during pass 1.
+_title_map: dict[str, str] = {}   # lower title → output path
+_cat_map:   dict[str, str] = {}   # cat slug → original category name
 
 
 def _replace_template(m):
@@ -284,8 +282,7 @@ def _replace_wikilink(m):
     """Replace a [[wikilink]] with an <a> tag or a .nl span for dead links."""
     inner    = m.group(1)
     ns_lower = inner.split(':')[0].lower() if ':' in inner else ''
-    if ns_lower in ('file', 'image', 'category', 'user', 'user talk',
-                    'template', 'talk', 'special', 'help', 'wikipedia'):
+    if ns_lower in _STRIP_NS:
         return ''
     # Strip interlanguage links (2–3 letter language codes like fr:, de:, es:)
     if re.match(r'^[a-z]{2,3}$', ns_lower):
@@ -329,15 +326,8 @@ def inline(s):
 
 
 def _is_infobox(template_name):
-    """Return True if the template name looks like an article infobox."""
     n = template_name.strip().lower()
-    for key in INFOBOX_TO_CAT:
-        if n == key or n.startswith(key + ' ') or n.startswith(key + '/'):
-            return True
-    # catch additional infobox types not in INFOBOX_TO_CAT
-    extra = {'book', 'adventure', 'spell', 'item', 'location', 'building',
-             'organization', 'deity', 'creature', 'person', 'class', 'race'}
-    return any(n == k or n.startswith(k + ' ') for k in extra)
+    return any(n == k or n.startswith(k + ' ') or n.startswith(k + '/') for k in _INFOBOX_NAMES)
 
 
 def render_infobox(template):
@@ -675,10 +665,9 @@ body{font-family:system-ui,sans-serif;font-size:18px;line-height:1.7}
 a{color:#000}
 main{max-width:820px;margin:0 auto;padding:1.5rem 1rem}
 h1{font-size:1.75rem;margin:.5rem 0 .9rem;line-height:1.25}
-h2{font-size:1.2rem;margin:1.6rem 0 .4rem}
-h3,h4,h5,h6{font-size:1rem;margin:1.2rem 0 .3rem}
+h2{font-size:1.5rem;margin:1.6rem 0 .4rem}
+h3,h4,h5,h6{font-size:1.2rem;margin:1.2rem 0 .3rem}
 p{margin-bottom:.8rem}
-ul,ol{margin:0 0 .8rem 1.5rem}
 article{display:flow-root}
 aside.infobox{width:100%;margin:0 0 1.5rem 0;padding:.75rem;border:1px solid #000;overflow-wrap:break-word}
 aside.infobox .infobox-title{font-weight:700;margin-bottom:.4rem}
@@ -694,6 +683,7 @@ th{background:#f0f0f0;font-weight:600}
 #search-res.on{display:block}
 .sr{display:block;padding:.4rem .9rem;border-bottom:1px solid #ccc;text-decoration:none}
 .sr:hover{background:#f0f0f0}
+.sr .cat{color:#333}
 .cats-list{margin-top:1.5rem;padding-top:.8rem;border-top:1px solid #ccc;color:#666}
 .entry-grid{columns:2;column-gap:1.5rem}
 .entry-grid a{display:block;padding:.15rem 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -729,7 +719,7 @@ SEARCH_JS = """\
       var a = document.createElement('a');
       a.href = d.p; a.className = 'sr';
       a.innerHTML = '<span>' + d.t.replace(/</g, '&lt;') + '</span>'
-                  + '<span class="cat">' + d.c + '</span>';
+                  + '<span class="cat"> \u2014 ' + d.c + '</span>';
       frag.appendChild(a);
     });
     res.appendChild(frag);
@@ -838,6 +828,7 @@ def collect_titles(xml_path):
     def on_page(title, text):
         cat      = detect_category(text)
         cat_slug = slugify(cat)
+        _cat_map[cat_slug] = cat
         base     = slugify(title)
         slug_counts[base] += 1
         n    = slug_counts[base]
@@ -848,86 +839,101 @@ def collect_titles(xml_path):
         xml.sax.parse(f, _SAXHandler(on_page))
 
 
-def write_pages(xml_path, dest, site_name, attribution, limit=0, filter_titles=None):
-    """
-    Pass 2 — convert every article and write its HTML file.
+def _worker_init(title_map, cat_map):
+    _title_map.update(title_map)
+    _cat_map.update(cat_map)
 
-    Returns (cat_entries, search_items) for use in later passes.
-    limit: stop after this many articles (0 = no limit)
-    filter_titles: if set, only process articles whose title contains this string (case-insensitive)
-    """
+
+def _process_article(args):
+    title, wikitext, rel_path, dest_str, site_name, attribution = args
+    dest = Path(dest_str)
+
+    try:
+        infobox_html, body_html, categories, sources = convert_page(wikitext)
+    except Exception as e:
+        infobox_html = ''
+        body_html    = f'<p>[parse error: {hl.escape(str(e))}]</p>'
+        categories   = []
+        sources      = []
+
+    if not infobox_html and '<p>' not in body_html:
+        return None
+
+    parts    = Path(rel_path).parts
+    broad    = _cat_map.get(parts[1], 'Miscellaneous') if len(parts) > 1 else 'Miscellaneous'
+    cat_href = safe_href(f'pages/{parts[1]}/index.html')
+
+    breadcrumb = (
+        f'<a href="index.html">Home</a> › '
+        f'<a href="{cat_href}">{hl.escape(broad)}</a> › '
+        f'{hl.escape(title)}'
+    )
+
+    cats_footer = ''
+    if categories:
+        cats_footer = '<div class="cats-list">Categories: ' + \
+            ' · '.join(hl.escape(c) for c in categories[:8]) + '</div>'
+
+    html = (
+        make_page_header(title, rel_path, site_name)
+        + f'\n<div class="bc">{breadcrumb}</div>'
+        + '\n<article>'
+        + f'\n<h1>{hl.escape(title)}</h1>'
+        + '\n' + infobox_html
+        + '\n' + body_html
+        + '\n' + cats_footer
+        + ('\n<h2>Sources</h2>\n<ul>\n'
+           + '\n'.join(f'<li>{hl.escape(s)}</li>' for s in sources)
+           + '\n</ul>' if sources else '')
+        + f'\n<div class="attr">{hl.escape(attribution)}</div>'
+        + '\n</article>\n</main>'
+        + '\n' + PAGE_FOOTER
+    )
+
+    out_file = dest / rel_path
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    out_file.write_text(html, encoding='utf-8')
+
+    return (broad, title, rel_path)
+
+
+def write_pages(xml_path, dest, site_name, attribution, limit=0, filter_titles=None, workers=1):
     cat_entries:  dict[str, list] = defaultdict(list)
     search_items: list[dict]      = []
-    count = 0
+    articles = []
 
     def on_page(title, wikitext):
-        nonlocal count
-        if limit and count >= limit:
+        if limit and len(articles) >= limit:
             return
         if filter_titles and filter_titles.lower() not in title.lower():
             return
-
         rel_path = _title_map.get(title.lower())
-        if not rel_path:
-            return
-
-        try:
-            infobox_html, body_html, categories, sources = convert_page(wikitext)
-        except Exception as e:
-            infobox_html = ''
-            body_html    = f'<p>[parse error: {hl.escape(str(e))}]</p>'
-            categories   = []
-            sources      = []
-
-        parts    = Path(rel_path).parts        # ('pages', 'cat-slug', 'slug.html')
-        broad    = parts[1].replace('-', ' ').title() if len(parts) > 1 else 'Miscellaneous'
-        cat_href = safe_href(f'pages/{parts[1]}/index.html')
-
-        breadcrumb = (
-            f'<a href="index.html">Home</a> › '
-            f'<a href="{cat_href}">{hl.escape(broad)}</a> › '
-            f'{hl.escape(title)}'
-        )
-
-        # Skip stubs: no paragraph content and no infobox
-        if not infobox_html and '<p>' not in body_html:
-            return
-
-        cats_footer = ''
-        if categories:
-            cats_footer = '<div class="cats-list">Categories: ' + \
-                ' · '.join(hl.escape(c) for c in categories[:8]) + '</div>'
-
-        html = (
-            make_page_header(title, rel_path, site_name)
-            + f'\n<div class="bc">{breadcrumb}</div>'
-            + '\n<article>'
-            + f'\n<h1>{hl.escape(title)}</h1>'
-            + '\n' + infobox_html
-            + '\n' + body_html
-            + '\n' + cats_footer
-            + ('\n<h2>Sources</h2>\n<ul>\n'
-               + '\n'.join(f'<li>{hl.escape(s)}</li>' for s in sources)
-               + '\n</ul>' if sources else '')
-            + f'\n<div class="attr">{hl.escape(attribution)}</div>'
-            + '\n</article>\n</main>'
-            + '\n' + PAGE_FOOTER
-        )
-
-        out_file = dest / rel_path
-        out_file.parent.mkdir(parents=True, exist_ok=True)
-        out_file.write_text(html, encoding='utf-8')
-
-        cat_entries[broad].append((title, rel_path))
-        search_items.append({'t': title, 'p': rel_path, 'c': broad})
-
-        count += 1
-        if count % 2000 == 0:
-            print(f'  {count:,}/{len(_title_map):,}', flush=True)
+        if rel_path:
+            articles.append((title, wikitext, rel_path, str(dest), site_name, attribution))
 
     with open(xml_path, 'rb') as f:
         xml.sax.parse(f, _SAXHandler(on_page))
-    print(f'  {count:,}/{len(_title_map):,} done', flush=True)
+
+    def handle_result(result, i):
+        if result is None:
+            return
+        broad, title, rel_path = result
+        cat_entries[broad].append((title, rel_path))
+        search_items.append({'t': title, 'p': rel_path, 'c': broad})
+        if i % 2000 == 0:
+            print(f'  {i:,}/{len(articles):,}', flush=True)
+
+    if workers > 1:
+        with ProcessPoolExecutor(max_workers=workers,
+                                 initializer=_worker_init,
+                                 initargs=(_title_map, _cat_map)) as pool:
+            for i, result in enumerate(pool.map(_process_article, articles, chunksize=50), 1):
+                handle_result(result, i)
+    else:
+        for i, args in enumerate(articles, 1):
+            handle_result(_process_article(args), i)
+
+    print(f'  {len(search_items):,}/{len(articles):,} done', flush=True)
     return cat_entries, search_items
 
 
@@ -1033,7 +1039,24 @@ def main():
         '--sample', type=int, default=0, metavar='N',
         help='Convert a random sample of N articles',
     )
+    parser.add_argument(
+        '--assets-only', action='store_true',
+        help='Regenerate style.css and search.js only, skip article conversion',
+    )
+    parser.add_argument(
+        '--workers', type=int, default=1, metavar='N',
+        help='Number of parallel worker processes for article conversion (default: 1)',
+    )
     args = parser.parse_args()
+
+    if args.assets_only:
+        out_path = args.out or Path(input('Output directory: ').strip())
+        out_path = out_path / 'forgotten_realms_wiki'
+        out_path.mkdir(parents=True, exist_ok=True)
+        (out_path / 'style.css').write_text(CSS,       encoding='utf-8')
+        (out_path / 'search.js').write_text(SEARCH_JS, encoding='utf-8')
+        print('Assets updated.')
+        return
 
     xml_path = args.xml or Path(input('Path to XML dump: ').strip())
     out_path = args.out or Path(input('Output directory: ').strip())
@@ -1063,7 +1086,8 @@ def main():
 
     print('Pass 2: converting articles...', flush=True)
     cat_entries, search_items = write_pages(xml_path, out_path, SITE_NAME, ATTRIBUTION,
-                                            limit=args.limit, filter_titles=args.filter_titles)
+                                            limit=args.limit, filter_titles=args.filter_titles,
+                                            workers=args.workers)
 
     print('Pass 3: category indexes...', flush=True)
     write_category_indexes(out_path, cat_entries, SITE_NAME)
