@@ -668,6 +668,7 @@ h1{font-size:1.75rem;margin:.5rem 0 .9rem;line-height:1.25}
 h2{font-size:1.5rem;margin:1.6rem 0 .4rem}
 h3,h4,h5,h6{font-size:1.2rem;margin:1.2rem 0 .3rem}
 p{margin-bottom:.8rem}
+ul,ol{margin:0 0 .8rem 1.5rem}
 article{display:flow-root}
 aside.infobox{width:100%;margin:0 0 1.5rem 0;padding:.75rem;border:1px solid #000;overflow-wrap:break-word}
 aside.infobox .infobox-title{font-weight:700;margin-bottom:.4rem}
