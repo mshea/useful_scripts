@@ -57,29 +57,44 @@ Usage
 
 Output layout
 -------------
-    index.html                  home page with category list and live search
-    categories.html             top 200 wiki category tags by article count
-    style.css                   stylesheet (black & white, mobile-friendly)
-    search.js                   client-side search logic
-    search-data.js              generated title index (~5 MB for 56k articles)
-    pages/<category>/<slug>.html   one file per article
+    index.html                      home page with category list and live search
+    categories.html                 top 200 wiki category tags by article count
+    style.css                       stylesheet (black & white, mobile-friendly)
+    search.js                       client-side search logic
+    search-data.js                  generated title index (~5 MB for 72k articles)
+    pages/<category>/index.html     A–Z article index for each broad category
+    pages/<category>/<slug>.html    one file per article
+    pages/<wiki-cat>/<slug>.html    wiki category hierarchy pages
 
 All hrefs are root-relative and resolved via <base href>, so the folder can
 be moved anywhere and opened with any browser via file://.
 
+Note: the script appends a forgotten_realms_wiki/ subdirectory to whatever
+output path you supply, so output lands at <your-path>/forgotten_realms_wiki/.
+
 How it works
 ------------
-Two SAX passes over the XML (streaming, low memory):
+Seven passes (first two are SAX streaming over the XML, rest are in-memory):
 
   Pass 1 — collect every main-namespace title, detect its broad category from
             the infobox template name or [[Category:...]] tags, and build a
             title → output-path map used to resolve [[wikilinks]]. Also counts
-            all raw [[Category:...]] tags across the corpus for categories.html.
+            all raw [[Category:...]] tags and builds the category tree.
 
   Pass 2 — for each article: strip citations and non-article templates with
             mwparserfromhell, extract the infobox as a full-width block at the
             top of the page, then convert the remaining wikitext line-by-line
             to HTML. Stub articles (no prose and no infobox) are skipped.
+
+  Pass 3 — write one A–Z index.html per broad category.
+
+  Pass 4 — write wiki category hierarchy pages (one per raw [[Category:...]] tag).
+
+  Pass 5 — write categories.html listing the top 200 wiki categories by count.
+
+  Pass 6 — write search-data.js title index.
+
+  Pass 7 — write root index.html.
 
 Configuration
 -------------
@@ -859,6 +874,16 @@ PAGE_FOOTER = """\
 </html>"""
 
 
+def render_page(title, rel_path, site_name, breadcrumb, body):
+    return (
+        make_page_header(title, rel_path, site_name)
+        + f'\n<div class="bc">{breadcrumb}</div>'
+        + '\n<article>\n' + body
+        + '\n</article>\n</main>\n'
+        + PAGE_FOOTER
+    )
+
+
 # ---------------------------------------------------------------------------
 # Build passes
 # ---------------------------------------------------------------------------
@@ -974,11 +999,8 @@ def _process_article(args):
         cats_footer = '<div class="cats-list">Categories: ' + \
             ' · '.join(hl.escape(c) for c in categories[:8]) + '</div>'
 
-    html = (
-        make_page_header(title, rel_path, site_name)
-        + f'\n<div class="bc">{breadcrumb}</div>'
-        + '\n<article>'
-        + f'\n<h1>{hl.escape(title)}</h1>'
+    body = (
+        f'<h1>{hl.escape(title)}</h1>'
         + '\n' + infobox_html
         + '\n' + body_html
         + '\n' + cats_footer
@@ -986,9 +1008,8 @@ def _process_article(args):
            + '\n'.join(f'<li>{hl.escape(s)}</li>' for s in sources)
            + '\n</ul>' if sources else '')
         + f'\n<div class="attr">{hl.escape(attribution)}</div>'
-        + '\n</article>\n</main>'
-        + '\n' + PAGE_FOOTER
     )
+    html = render_page(title, rel_path, site_name, breadcrumb, body)
 
     out_file = dest / rel_path
     out_file.parent.mkdir(parents=True, exist_ok=True)
@@ -1071,16 +1092,14 @@ def write_category_indexes(dest, cat_entries, site_name):
                 f'\n<div class="entry-grid">{links}</div>'
             )
 
-        html = (
-            make_page_header(broad, rel_idx, site_name)
-            + f'\n<div class="bc"><a href="index.html">Home</a> › {hl.escape(broad)}</div>'
-            + f'\n<article><h1>{hl.escape(broad)}</h1>'
+        body = (
+            f'<h1>{hl.escape(broad)}</h1>'
             + f'\n<p style="margin-bottom:.75rem">{len(entries):,} articles</p>'
             + f'\n<p class="jump-bar" style="margin-bottom:1.5rem">{jump_bar}</p>'
             + '\n' + '\n'.join(sections)
-            + '\n</article>\n</main>'
-            + '\n' + PAGE_FOOTER
         )
+        html = render_page(broad, rel_idx, site_name,
+                           f'<a href="index.html">Home</a> › {hl.escape(broad)}', body)
         out = dest / rel_idx
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(html, encoding='utf-8')
@@ -1224,18 +1243,16 @@ def write_wiki_cat_hierarchy_pages(dest, wiki_cat_articles, site_name):
         )
 
         total = len(all_subtree)
-        html = (
-            make_page_header(cat_name, rel, site_name)
-            + f'\n<div class="bc"><a href="index.html">Home</a> › '
-            + f'<a href="categories.html">Categories</a> › {hl.escape(cat_name)}</div>'
-            + f'\n<article><h1>{hl.escape(cat_name)}</h1>'
+        body = (
+            f'<h1>{hl.escape(cat_name)}</h1>'
             + f'\n{parent_html}'
             + (f'\n<p style="margin-bottom:.75rem">{total:,} articles</p>' if total else '')
             + ('\n' + jump_bar if jump_bar else '')
             + '\n' + '\n'.join(sections)
-            + '\n</article>\n</main>'
-            + '\n' + PAGE_FOOTER
         )
+        breadcrumb = (f'<a href="index.html">Home</a> › '
+                      f'<a href="categories.html">Categories</a> › {hl.escape(cat_name)}')
+        html = render_page(cat_name, rel, site_name, breadcrumb, body)
         (dest / rel).write_text(html, encoding='utf-8')
 
     print(f'  {len(all_cats):,} category pages written', flush=True)
@@ -1252,19 +1269,16 @@ def write_wiki_categories_page(dest, top_cats, site_name, top_n=200):
         for i, (cat, count) in enumerate(top_cats, 1)
     )
 
-    html = (
-        make_page_header('Wiki Categories', rel, site_name)
-        + '\n<div class="bc"><a href="index.html">Home</a> › Wiki Categories</div>'
-        + '\n<article>'
-        + f'\n<h1>Top {top_n} Wiki Categories</h1>'
+    body = (
+        f'<h1>Top {top_n} Wiki Categories</h1>'
         + f'\n<p style="margin-bottom:1.5rem">{len(_wiki_cat_counts):,} total categories across the corpus</p>'
         + '\n<table style="max-width:100%;display:table">'
         + '\n<thead><tr><th>#</th><th>Category</th><th>Articles</th></tr></thead>'
         + '\n<tbody>' + rows + '\n</tbody>'
         + '\n</table>'
-        + '\n</article>\n</main>'
-        + '\n' + PAGE_FOOTER
     )
+    html = render_page('Wiki Categories', rel, site_name,
+                       '<a href="index.html">Home</a> › Wiki Categories', body)
     (dest / rel).write_text(html, encoding='utf-8')
     print(f'  {top_n} categories written', flush=True)
 
