@@ -62,9 +62,9 @@ Output layout
     style.css                       stylesheet (black & white, mobile-friendly)
     search.js                       client-side search logic
     search-data.js                  generated title index (~5 MB for 72k articles)
-    pages/<category>/index.html     A–Z article index for each broad category
+    pages/<category>/index.html     co-category grouped index for each broad category
     pages/<category>/<slug>.html    one file per article
-    pages/<wiki-cat>/<slug>.html    wiki category hierarchy pages
+    wiki-categories/<slug>.html     one page per wiki category with >200 articles
 
 All hrefs are root-relative and resolved via <base href>, so the folder can
 be moved anywhere and opened with any browser via file://.
@@ -86,9 +86,11 @@ Seven passes (first two are SAX streaming over the XML, rest are in-memory):
             top of the page, then convert the remaining wikitext line-by-line
             to HTML. Stub articles (no prose and no infobox) are skipped.
 
-  Pass 3 — write one A–Z index.html per broad category.
+  Pass 3 — write one index.html per broad category (Characters, Places, etc.),
+            articles grouped by their most common co-wiki-categories.
 
-  Pass 4 — write wiki category hierarchy pages (one per raw [[Category:...]] tag).
+  Pass 4 — write one page per wiki category with >200 articles, articles
+            grouped by co-categories using the same single-assignment logic.
 
   Pass 5 — write categories.html listing the top 200 wiki categories by count.
 
@@ -126,17 +128,66 @@ SITE_NAME   = 'Forgotten Realms Wiki'
 ATTRIBUTION = 'Forgotten Realms Wiki · CC BY-SA 3.0 · forgottenrealms.fandom.com'
 
 # Top-level browse sections shown on the home page.
-# Each entry is (Section Title, [wiki category names to link to]).
+# Each secondary entry is either a plain wiki category name string, or a
+# ('Display Name', 'Wiki Category Name') tuple when you want a shorter label.
+# Categories not found in the data or with no articles are silently skipped.
+# Within each section, categories are sorted by article count descending.
 BROWSE_SECTIONS = [
-    ('Geography',          ['Locations']),
-    ('Characters',         ['Inhabitants']),
-    ('Organizations',      ['Organizations', 'Organizations on Toril']),
-    ('Items & Artifacts',  ['Items', 'Magic items', 'Weapons', 'Armor']),
-    ('Spells',             ['Wizard spells', 'Cleric spells', 'Sorcerer spells']),
-    ('Creatures',          ['Creatures', 'Undead', 'Dragons']),
-    ('Events & History',   ['Events on Toril']),
-    ('Deities & Religion', ['Deities']),
-    ('Books & Media',      ['Books']),
+    ('People', [
+        'Humans', 'Elves', 'Dwarves', 'Drow', 'Halflings', 'Half-elves', 'Gnomes',
+        'Wizards', 'Fighters', 'Clerics', 'Rogues', 'Rangers', 'Warriors', 'Sorcerers',
+        'Nobles', 'Rulers', 'Merchants', 'Adventurers',
+    ]),
+    ('Places', [
+        'Settlements', 'Cities', 'Towns', 'Villages', 'Ruins',
+        'Temples', 'Inns', 'Taverns', 'Shops',
+        ('Waterdeep',          'Locations in Waterdeep'),
+        ('Cormyr',             'Locations in Cormyr'),
+        ('Western Heartlands', 'Locations in the Western Heartlands'),
+        ('Eastern Heartlands', 'Locations in the Eastern Heartlands'),
+        ('Northwest Faerûn',   'Locations in Northwest Faerûn'),
+        ('Zakhara',            'Locations in Zakhara'),
+        ('Kara-Tur',           'Locations in Kara-Tur'),
+    ]),
+    ('Items', [
+        'Magic items', 'Weapons', 'Magic weapons', 'Armor', 'Magic armor',
+        'Wondrous items', 'Swords', 'Clothing', 'Jewelry', 'Food and drink',
+    ]),
+    ('Spells', [
+        'Wizard spells', 'Cleric spells', 'Sorcerer spells', 'Druid spells', 'Bard spells',
+        'Alteration spells', 'Evocation spells', 'Conjuration spells',
+        'Necromancy spells', 'Abjuration spells', 'Transmutation spells', 'Enchantment spells',
+    ]),
+    ('Creatures', [
+        'Dragons', 'Undead', 'Demons', 'Devils', 'Giants', 'Lycanthropes',
+    ]),
+    ('Organizations', [
+        ('Faerûnian',   'Organizations in Faerûn'),
+        ('Military',    'Military organizations'),
+        ('Religious',   'Religious organizations'),
+        ('Noble houses','Noble houses'),
+        'Families',
+        ('Zhentarim',   'Members of the Zhentarim'),
+    ]),
+    ('Deities', [
+        'Deities',
+        ('Great Wheel',    'Inhabitants of the Great Wheel planes'),
+        ('Domains',        'Deity domains'),
+        ('Divine Realms',  'Divine realms'),
+        ('Faerûnian',      'Faerûnian pantheon'),
+        ('Human',          'Human deities'),
+        ('Greater',        'Greater deities'),
+        ('Intermediate',   'Intermediate deities'),
+        ('Lesser',         'Lesser deities'),
+    ]),
+    ('Events & History', [
+        ('Events',         'Events on Toril'),
+        ('Faerûn events',  'Events in Faerûn'),
+    ]),
+    ('Books & Media', [
+        'Sourcebooks', 'Adventures', 'Novels',
+        ('Books', 'Books (in-universe)'),
+    ]),
 ]
 
 # Map infobox template names → broad category shown on the home page.
@@ -208,7 +259,7 @@ WIKICAT_RULES = [
     ('conflict',    'Events & History'), ('event',    'Events & History'),
     ('festival',    'Events & History'), ('holiday',  'Events & History'),
     ('plague',      'Events & History'), ('disease',  'Events & History'),
-    ('ceremony',    'Events & History'), ('war',      'Events & History'),
+    ('ceremony',    'Events & History'),
     ('language',    'Languages & Peoples'), ('ethnicity', 'Languages & Peoples'),
     ('dialect',     'Languages & Peoples'),
 ]
@@ -246,6 +297,10 @@ _CAT_NOISE = re.compile(
 # Derived sets used internally — do not edit these directly.
 _STRIP_NS      = frozenset(ns.rstrip(':') for ns in STRIP_LINK_NAMESPACES)
 _INFOBOX_NAMES = frozenset(INFOBOX_TO_CAT) | {'adventure'}
+
+# Categories too broad to be useful as section headings on category pages.
+# Matches e.g. "Inhabitants of Toril", "Locations in Faerûn", "Items from Toril".
+_UMBRELLA_CAT = re.compile(r'\b(?:of|from|in|on)\s+(?:Toril|Faer[uû]n)\s*$', re.I)
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +372,10 @@ _cat_map:         dict[str, str]       = {}                 # cat slug → origi
 _wiki_cat_counts: dict[str, int]       = defaultdict(int)   # raw wiki category → article count
 _cat_parents:     dict[str, list[str]] = defaultdict(list)  # category → parent categories
 _cat_children:    dict[str, list[str]] = defaultdict(list)  # category → child categories
+
+# Populated in main() after pass 1. Categories with >100 direct articles — proxy for
+# "has a wiki-category page". Passed to workers so article footers can link them.
+_linkable_cats: set[str] = set()
 
 
 def _replace_template(m):
@@ -964,9 +1023,10 @@ def collect_titles(xml_path):
             _cat_children[parent].append(child)
 
 
-def _worker_init(title_map, cat_map):
+def _worker_init(title_map, cat_map, linkable_cats):
     _title_map.update(title_map)
     _cat_map.update(cat_map)
+    _linkable_cats.update(linkable_cats)
 
 
 def _process_article(args):
@@ -996,8 +1056,16 @@ def _process_article(args):
 
     cats_footer = ''
     if categories:
-        cats_footer = '<div class="cats-list">Categories: ' + \
-            ' · '.join(hl.escape(c) for c in categories[:8]) + '</div>'
+        cat_links = []
+        for c in categories[:8]:
+            if c in _linkable_cats:
+                cat_links.append(
+                    f'<a href="{safe_href(f"wiki-categories/{slugify(c)}.html")}">'
+                    f'{hl.escape(c)}</a>'
+                )
+            else:
+                cat_links.append(hl.escape(c))
+        cats_footer = '<div class="cats-list">Categories: ' + ' · '.join(cat_links) + '</div>'
 
     body = (
         f'<h1>{hl.escape(title)}</h1>'
@@ -1050,7 +1118,7 @@ def write_pages(xml_path, dest, site_name, attribution, limit=0, filter_titles=N
     if workers > 1:
         with ProcessPoolExecutor(max_workers=workers,
                                  initializer=_worker_init,
-                                 initargs=(_title_map, _cat_map)) as pool:
+                                 initargs=(_title_map, _cat_map, _linkable_cats)) as pool:
             for i, result in enumerate(pool.map(_process_article, articles, chunksize=50), 1):
                 handle_result(result, i)
     else:
@@ -1061,41 +1129,141 @@ def write_pages(xml_path, dest, site_name, attribution, limit=0, filter_titles=N
     return cat_entries, search_items, wiki_cat_articles
 
 
-def write_category_indexes(dest, cat_entries, site_name):
-    """Write one index.html per broad category listing all its articles A–Z."""
-    from collections import defaultdict as _dd
+def _subtree_articles(cat, wiki_cat_articles, memo):
+    """Return dict {title: rel_path} for all articles reachable from cat (BFS, memoized)."""
+    if cat in memo:
+        return memo[cat]
+    visited = set()
+    queue = [cat]
+    titles = {}
+    while queue:
+        c = queue.pop()
+        if c in visited:
+            continue
+        visited.add(c)
+        for t, r in wiki_cat_articles.get(c, []):
+            titles[t] = r
+        queue.extend(_cat_children.get(c, []))
+    memo[cat] = titles
+    return titles
+
+
+def _group_co_cats(sorted_articles, article_to_cats, exclude_cat=None):
+    """Group articles by co-category using single-assignment (best/most-popular wins).
+
+    Returns (shown_sections, co_cat_articles, other_articles):
+      shown_sections   — [(cat_name, raw_count)] alphabetical, all with >=100 assigned articles
+      co_cat_articles  — {cat_name: [(title, rel_path)]}
+      other_articles   — [(title, rel_path)] sorted alphabetically
+    """
+    co_cat_counts: dict[str, int] = defaultdict(int)
+    for title, _ in sorted_articles:
+        for co_cat in article_to_cats[title]:
+            if co_cat != exclude_cat and not _UMBRELLA_CAT.search(co_cat):
+                co_cat_counts[co_cat] += 1
+
+    shown_sections = sorted(
+        [(c, n) for c, n in co_cat_counts.items() if n >= 100],
+        key=lambda x: x[0].lower()
+    )
+    shown_co_cats = {c for c, _ in shown_sections}
+
+    co_cat_articles: dict[str, list] = defaultdict(list)
+    other_articles: list = []
+    for title, rel_path in sorted_articles:
+        matching = shown_co_cats & set(article_to_cats[title])
+        if matching:
+            best = sorted(matching, key=lambda c: (-co_cat_counts[c], c))[0]
+            co_cat_articles[best].append((title, rel_path))
+        else:
+            other_articles.append((title, rel_path))
+
+    shown_sections = [(c, n) for c, n in shown_sections if len(co_cat_articles[c]) >= 100]
+    for co_cat in list(co_cat_articles):
+        if co_cat not in {c for c, _ in shown_sections}:
+            other_articles.extend(co_cat_articles.pop(co_cat))
+    other_articles.sort(key=lambda x: x[0].lower())
+
+    return shown_sections, co_cat_articles, other_articles
+
+
+def _render_co_cat_sections(shown_sections, co_cat_articles, other_articles,
+                             rel_path, wiki_cat_articles, memo):
+    """Build jump-bar HTML and section HTML blocks from grouped articles.
+
+    Section headers link to wiki-category pages for categories with >200 articles.
+    Returns (jump_bar_html, section_html_list).
+    """
+    jump_items = []
+    section_htmls = []
+
+    for co_cat, _ in shown_sections:
+        anchor        = re.sub(r'[^\w\-]', '_', co_cat)
+        articles_here = co_cat_articles[co_cat]
+        has_page      = len(_subtree_articles(co_cat, wiki_cat_articles, memo)) > 200
+        cat_href      = safe_href(f'wiki-categories/{slugify(co_cat)}.html')
+
+        jump_items.append(
+            f'<a href="{safe_href(rel_path)}#{anchor}">'
+            f'{hl.escape(co_cat)} ({len(articles_here):,})</a>'
+        )
+        header = (
+            f'<h2 id="{anchor}" style="margin-top:1.5rem">'
+            + (f'<a href="{cat_href}">' if has_page else '')
+            + hl.escape(co_cat)
+            + ('</a>' if has_page else '')
+            + f' ({len(articles_here):,})</h2>'
+        )
+        links = '\n'.join(
+            f'<a href="{safe_href(r)}">{hl.escape(t)}</a>' for t, r in articles_here
+        )
+        section_htmls.append(header + f'\n<div class="entry-grid">{links}</div>')
+
+    if other_articles:
+        jump_items.append(
+            f'<a href="{safe_href(rel_path)}#Other">Other ({len(other_articles):,})</a>'
+        )
+        section_htmls.append(
+            f'<h2 id="Other" style="margin-top:1.5rem">Other ({len(other_articles):,})</h2>'
+            + '\n<div class="entry-grid">'
+            + '\n'.join(f'<a href="{safe_href(r)}">{hl.escape(t)}</a>'
+                        for t, r in other_articles)
+            + '</div>'
+        )
+
+    jump_bar = (
+        '<p class="jump-bar" style="margin-bottom:1.5rem">'
+        + ' · '.join(jump_items) + '</p>'
+    ) if jump_items else ''
+
+    return jump_bar, section_htmls
+
+
+def write_category_indexes(dest, cat_entries, wiki_cat_articles, site_name):
+    """Write one index.html per broad category, articles grouped by top co-wiki-categories."""
+    article_to_cats: dict[str, list[str]] = defaultdict(list)
+    for cat, articles in wiki_cat_articles.items():
+        for title, _ in articles:
+            article_to_cats[title].append(cat)
+
+    memo = {}
 
     for broad, entries in sorted(cat_entries.items()):
         cat_slug = slugify(broad)
         rel_idx  = f'pages/{cat_slug}/index.html'
 
         sorted_entries = sorted(entries, key=lambda x: x[0].lower())
-
-        by_letter = _dd(list)
-        for t, r in sorted_entries:
-            letter = t[0].upper() if t and t[0].isalpha() else '#'
-            by_letter[letter].append((t, r))
-        letters = sorted(by_letter)
-
-        jump_bar = ' '.join(
-            f'<a href="{rel_idx}#{ltr}">{ltr}</a>' for ltr in letters
+        shown_sections, co_cat_articles, other_articles = _group_co_cats(
+            sorted_entries, article_to_cats, exclude_cat=broad
         )
-
-        sections = []
-        for ltr in letters:
-            links = '\n'.join(
-                f'<a href="{safe_href(r)}">{hl.escape(t)}</a>'
-                for t, r in by_letter[ltr]
-            )
-            sections.append(
-                f'<h2 id="{ltr}" style="margin-top:1.5rem">{ltr}</h2>'
-                f'\n<div class="entry-grid">{links}</div>'
-            )
+        jump_bar, sections = _render_co_cat_sections(
+            shown_sections, co_cat_articles, other_articles, rel_idx, wiki_cat_articles, memo
+        )
 
         body = (
             f'<h1>{hl.escape(broad)}</h1>'
             + f'\n<p style="margin-bottom:.75rem">{len(entries):,} articles</p>'
-            + f'\n<p class="jump-bar" style="margin-bottom:1.5rem">{jump_bar}</p>'
+            + ('\n' + jump_bar if jump_bar else '')
             + '\n' + '\n'.join(sections)
         )
         html = render_page(broad, rel_idx, site_name,
@@ -1113,46 +1281,27 @@ def write_search_index(dest, search_items):
     print(f'  {len(search_items):,} entries, {len(js) // 1024} KB', flush=True)
 
 
-def _subtree_articles(cat, wiki_cat_articles, memo):
-    """Return frozenset of article titles reachable from cat (BFS, cycle-safe, memoized)."""
-    if cat in memo:
-        return memo[cat]
-    visited = set()
-    queue = [cat]
-    titles = {}  # title -> rel_path (last seen wins)
-    while queue:
-        c = queue.pop()
-        if c in visited:
-            continue
-        visited.add(c)
-        for t, r in wiki_cat_articles.get(c, []):
-            titles[t] = r
-        queue.extend(_cat_children.get(c, []))
-    memo[cat] = titles
-    return titles
-
-
 def write_wiki_cat_hierarchy_pages(dest, wiki_cat_articles, site_name):
-    """Write one page per wiki category showing subcategories + articles.
+    """Write one page per wiki category with >200 subtree articles.
 
-    Subcategories with >100 articles are shown as linked headings (click through
-    to that category's own page). Subcategories with ≤100 articles are expanded
-    inline. Articles not covered by any subcategory appear in an "Other" section.
-    Uses subtree article counts so structural categories (no direct articles) are
-    included as long as their descendants have articles.
+    Articles are grouped by co-categories using single-assignment (each article
+    lands in exactly one section — the co-category with the most overlap).
+    Co-categories with >=100 assigned articles get a section; the rest go to Other.
     """
     (dest / 'wiki-categories').mkdir(parents=True, exist_ok=True)
 
-    # Include any category that is a parent of a category with articles
+    article_to_cats: dict[str, list[str]] = defaultdict(list)
+    for cat, articles in wiki_cat_articles.items():
+        for title, _ in articles:
+            article_to_cats[title].append(cat)
+
     all_cats = set(wiki_cat_articles.keys())
     for parent in list(_cat_children.keys()):
         all_cats.add(parent)
 
     memo = {}
 
-    # Multiple category names can produce the same slug (e.g. "Locations" and
-    # "locations"). Keep only the one with the largest subtree so the canonical
-    # page isn't overwritten by a near-empty shadow category.
+    # Deduplicate slug collisions — keep the category with the largest subtree
     slug_to_cat: dict[str, tuple[str, int]] = {}
     for cn in all_cats:
         sl = slugify(cn)
@@ -1161,81 +1310,28 @@ def write_wiki_cat_hierarchy_pages(dest, wiki_cat_articles, site_name):
             slug_to_cat[sl] = (cn, sz)
     all_cats = {cat for cat, _ in slug_to_cat.values()}
 
-    for cat_name in sorted(all_cats):
+    cats_to_write = {cn for cn in all_cats
+                     if len(_subtree_articles(cn, wiki_cat_articles, memo)) > 200}
+
+    for cat_name in sorted(cats_to_write):
         slug = slugify(cat_name)
         rel  = f'wiki-categories/{slug}.html'
 
-        # Use subtree counts so structural (no-direct-article) categories are included
-        children_with_counts = [
-            (c, len(_subtree_articles(c, wiki_cat_articles, memo)))
-            for c in _cat_children.get(cat_name, [])
-        ]
-        children_with_counts = [(c, n) for c, n in children_with_counts if n >= 50]
-        children_with_counts.sort(key=lambda x: -x[1])
+        all_subtree  = _subtree_articles(cat_name, wiki_cat_articles, memo)
+        sorted_items = sorted(all_subtree.items(), key=lambda x: x[0].lower())
 
-        # "Other" = all subtree articles not covered by a shown heading
-        # (includes direct articles + articles from subcategories below the threshold)
-        child_titles = set()
-        for c, _ in children_with_counts:
-            child_titles |= _subtree_articles(c, wiki_cat_articles, memo).keys()
-        all_subtree = _subtree_articles(cat_name, wiki_cat_articles, memo)
-        other_articles = sorted(
-            [(t, r) for t, r in all_subtree.items() if t not in child_titles],
-            key=lambda x: x[0].lower()
+        shown_sections, co_cat_articles, other_articles = _group_co_cats(
+            sorted_items, article_to_cats, exclude_cat=cat_name
         )
-
-        jump_items = []
-        sections   = []
-
-        for child, count in children_with_counts:
-            anchor     = re.sub(r'[^\w\-]', '_', child)
-            child_href = safe_href(f'wiki-categories/{slugify(child)}.html')
-            jump_items.append(
-                f'<a href="{safe_href(rel)}#{anchor}">{hl.escape(child)}</a> ({count:,})'
-            )
-            if count > 100:
-                sections.append(
-                    f'<h2 id="{anchor}" style="margin-top:1.5rem">'
-                    f'<a href="{child_href}">{hl.escape(child)}</a> ({count:,})</h2>'
-                )
-            else:
-                child_entries = sorted(_subtree_articles(child, wiki_cat_articles, memo).items(),
-                                       key=lambda x: x[0].lower())
-                links = '\n'.join(
-                    f'<a href="{safe_href(r)}">{hl.escape(t)}</a>'
-                    for t, r in child_entries
-                )
-                sections.append(
-                    f'<h2 id="{anchor}" style="margin-top:1.5rem">'
-                    f'{hl.escape(child)} ({count:,})</h2>'
-                    f'\n<div class="entry-grid">{links}</div>'
-                )
-
-        if other_articles:
-            other_links = '\n'.join(
-                f'<a href="{safe_href(r)}">{hl.escape(t)}</a>'
-                for t, r in other_articles
-            )
-            if children_with_counts:
-                jump_items.append(
-                    f'<a href="{safe_href(rel)}#Other">Other ({len(other_articles):,})</a>'
-                )
-                sections.append(
-                    f'<h2 id="Other" style="margin-top:1.5rem">Other ({len(other_articles):,})</h2>'
-                    f'\n<div class="entry-grid">{other_links}</div>'
-                )
-            else:
-                sections.append(f'<div class="entry-grid">{other_links}</div>')
-
-        jump_bar = (
-            '<p class="jump-bar" style="margin-bottom:1.5rem">'
-            + ' · '.join(jump_items) + '</p>'
-        ) if jump_items else ''
+        jump_bar, section_htmls = _render_co_cat_sections(
+            shown_sections, co_cat_articles, other_articles, rel, wiki_cat_articles, memo
+        )
 
         parents = _cat_parents.get(cat_name, [])
         parent_links = ' · '.join(
             f'<a href="{safe_href(f"wiki-categories/{slugify(p)}.html")}">{hl.escape(p)}</a>'
             for p in parents[:5]
+            if len(_subtree_articles(p, wiki_cat_articles, memo)) > 200
         )
         parent_html = (
             f'<p style="margin-bottom:.5rem;color:#666">In: {parent_links}</p>'
@@ -1248,14 +1344,14 @@ def write_wiki_cat_hierarchy_pages(dest, wiki_cat_articles, site_name):
             + f'\n{parent_html}'
             + (f'\n<p style="margin-bottom:.75rem">{total:,} articles</p>' if total else '')
             + ('\n' + jump_bar if jump_bar else '')
-            + '\n' + '\n'.join(sections)
+            + '\n' + '\n'.join(section_htmls)
         )
         breadcrumb = (f'<a href="index.html">Home</a> › '
                       f'<a href="categories.html">Categories</a> › {hl.escape(cat_name)}')
         html = render_page(cat_name, rel, site_name, breadcrumb, body)
         (dest / rel).write_text(html, encoding='utf-8')
 
-    print(f'  {len(all_cats):,} category pages written', flush=True)
+    print(f'  {len(cats_to_write):,} category pages written', flush=True)
 
 
 def write_wiki_categories_page(dest, top_cats, site_name, top_n=200):
@@ -1288,45 +1384,42 @@ def write_home_page(dest, cat_entries, search_items, wiki_cat_articles, site_nam
     """Write the root index.html."""
     total = len(search_items)
 
-    type_items = sorted(cat_entries.items(), key=lambda x: -len(x[1]))
-    type_links = ', '.join(
-        f'<a href="{safe_href(f"pages/{slugify(cat)}/index.html")}">'
-        f'{hl.escape(cat)}</a> ({len(entries):,})'
-        for cat, entries in type_items
-    )
-
     memo = {}
 
-    def meaningful_cats(root_cats, top_n=20):
-        """Walk the full subtree of root_cats; return top N categories that have
-        direct articles (skipping structural intermediate nodes), sorted by subtree count."""
-        visited = set()
-        queue = list(root_cats)
-        candidates = {}
-        while queue:
-            c = queue.pop()
-            if c in visited:
-                continue
-            visited.add(c)
-            if wiki_cat_articles.get(c):
-                candidates[c] = len(_subtree_articles(c, wiki_cat_articles, memo))
-            queue.extend(_cat_children.get(c, []))
-        return sorted(candidates.items(), key=lambda x: -x[1])[:top_n]
+    section_index_pages = {
+        'People':          'pages/characters/index.html',
+        'Places':          'pages/places/index.html',
+        'Items':           'pages/items-artifacts/index.html',
+        'Spells':          'pages/spells/index.html',
+        'Creatures':       'pages/creatures/index.html',
+        'Organizations':   'pages/organizations/index.html',
+        'Deities':         'pages/deities-religion/index.html',
+        'Events & History':'pages/events-history/index.html',
+        'Books & Media':   'pages/books-media/index.html',
+    }
 
-    browse_sections = []
-    for section, cats in BROWSE_SECTIONS:
-        ranked = meaningful_cats(cats)
-        items = [
-            f'<a href="{safe_href(f"wiki-categories/{slugify(cat)}.html")}">'
-            f'{hl.escape(cat)}</a> ({count:,})'
-            for cat, count in ranked
-        ]
-        if items:
-            browse_sections.append(f'<h2>{hl.escape(section)}</h2>\n<p>{", ".join(items)}</p>')
-
-    sections_html = [
-        f'<h2>Article Types ({total:,})</h2>\n<p>{type_links}</p>',
-    ] + browse_sections
+    rows = []
+    for section, cat_entries in BROWSE_SECTIONS:
+        ranked = []
+        for entry in cat_entries:
+            display, lookup = entry if isinstance(entry, tuple) else (entry, entry)
+            count = len(_subtree_articles(lookup, wiki_cat_articles, memo))
+            ranked.append((display, lookup, count))
+        ranked.sort(key=lambda x: -x[2])
+        ranked = [(d, l, n) for d, l, n in ranked if n > 200]
+        if not ranked:
+            continue
+        links = ', '.join(
+            f'<a href="{safe_href(f"wiki-categories/{slugify(l)}.html")}">'
+            f'{hl.escape(d)}</a> ({n:,})'
+            for d, l, n in ranked
+        )
+        index_path = section_index_pages.get(section)
+        heading = (
+            f'<a href="{safe_href(index_path)}">{hl.escape(section)}</a>'
+            if index_path else hl.escape(section)
+        )
+        rows.append(f'<p><strong>{heading}</strong>: {links}</p>')
 
     html = f"""\
 <!doctype html>
@@ -1347,7 +1440,7 @@ def write_home_page(dest, cat_entries, search_items, wiki_cat_articles, site_nam
 <article>
 <h1>{hl.escape(site_name)}</h1>
 <p style="margin-bottom:1.5rem">{total:,} articles &middot; {hl.escape(attribution)}</p>
-{chr(10).join(sections_html)}
+{chr(10).join(rows)}
 <p style="margin-top:1.5rem;color:#666"><a href="categories.html">All wiki categories ({len(_wiki_cat_counts):,})</a></p>
 </article>
 </main>
@@ -1431,6 +1524,7 @@ def main():
 
     print('Pass 1: collecting titles and category counts...', flush=True)
     collect_titles(xml_path)
+    _linkable_cats.update(c for c, n in _wiki_cat_counts.items() if n > 100)
     print(f'  {len(_title_map):,} articles, {len(_wiki_cat_counts):,} unique categories, '
           f'{len(_cat_children):,} category tree nodes [{elapsed()}]', flush=True)
 
@@ -1450,7 +1544,7 @@ def main():
     top_cats = sorted(_wiki_cat_counts.items(), key=lambda x: -x[1])[:200]
 
     print(f'Pass 3: category indexes... [{elapsed()}]', flush=True)
-    write_category_indexes(out_path, cat_entries, SITE_NAME)
+    write_category_indexes(out_path, cat_entries, wiki_cat_articles, SITE_NAME)
 
     print(f'Pass 4: wiki category hierarchy pages... [{elapsed()}]', flush=True)
     write_wiki_cat_hierarchy_pages(out_path, wiki_cat_articles, SITE_NAME)
