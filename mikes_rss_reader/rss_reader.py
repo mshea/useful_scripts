@@ -2,7 +2,7 @@
 """
 rss_reader.py — Parse an OPML subscription file, fetch RSS/Atom feeds, and
 generate a static, dark-themed HTML feed reader with per-article pages,
-category grouping, full-text search, client-side read-later stars, and
+category grouping, search across titles/sources/keywords, client-side read-later stars, and
 Obsidian export links.
 
 Features
@@ -10,11 +10,11 @@ Features
 - Generates a daily index page (feeds.html) grouped by OPML category.
 - Creates per-article HTML pages with local navigation.
 - Builds an archive index and per-day archive pages.
-- Full-text search via a stripped-down SQLite FTS database served to the client.
+- Search via a stripped-down SQLite FTS database served to the client (titles, sources, keywords).
 - Read-later list persisted in browser localStorage.
 - Keyword extraction with YAKE for quick tagging.
 - Obsidian vault links for clipping articles.
-- "Summarize" button on article pages (configurable endpoint; see config.json).
+- "Summarize" button on article pages (configurable backend endpoint; see config.json).
 
 Dependencies
 - Python 3.10+
@@ -138,7 +138,7 @@ def load_config(config_path):
     cfg.setdefault("feed_timeout", 10)
     cfg.setdefault("category_order", [])
     cfg.setdefault("timezone", "America/New_York")
-    cfg.setdefault("summarizer_endpoint", "/summarizer/summarize/text")
+    cfg.setdefault("summarizer_endpoint", "")
     cfg.setdefault("obsidian", {"vault": "My Vault", "folder": "Clippings"})
     return cfg
 
@@ -157,7 +157,7 @@ def generate_config(path="config.json"):
             "vault": "My Vault",
             "folder": "Clippings"
         },
-        "summarizer_endpoint": "/summarizer/summarize/text",
+        "summarizer_endpoint": "",
         "output_files": {
             "feeds_html": "feeds.html",
             "archive_html": "archive.html",
@@ -251,6 +251,8 @@ document.querySelectorAll('button.star').forEach(function(btn){
 
 
 def make_article_page_js(summarizer_endpoint):
+    if not summarizer_endpoint:
+        return RL_FUNCTIONS_JS.strip()
     return RL_FUNCTIONS_JS + """
 var btn=document.querySelector('button.star');
 var slug=btn.dataset.slug;
@@ -294,6 +296,8 @@ sumbtn.addEventListener('click',function(){
     });
 });
 """.strip()
+
+
 
 
 def parse_opml(opml_path):
@@ -369,7 +373,7 @@ def rebuild_fts(con):
 
 
 def build_search_db(source_db, search_db_path):
-    """Create a stripped-down DB for client-side search (no content column)."""
+    """Create a stripped-down DB for client-side search (title, source, and keywords only)."""
     if os.path.exists(search_db_path):
         os.remove(search_db_path)
     src = sqlite3.connect(source_db)
@@ -621,7 +625,7 @@ def save_article_pages(articles, articles_dir, cfg):
     """Write one HTML file per article into articles_dir."""
     Path(articles_dir).mkdir(parents=True, exist_ok=True)
     tz = ZoneInfo(cfg["timezone"])
-    summarizer_endpoint = cfg.get("summarizer_endpoint", "/summarizer/summarize/text")
+    summarizer_endpoint = cfg.get("summarizer_endpoint", "")
     js = make_article_page_js(summarizer_endpoint)
     vault = cfg["obsidian"]["vault"]
     folder = cfg["obsidian"]["folder"]
@@ -640,6 +644,8 @@ def save_article_pages(articles, articles_dir, cfg):
         source_html = render_source_link(site_link, source_esc)
         keywords = a.get("keywords", "")
         kw_html = f'<p class="keywords" style="font-size:1rem;color:#aaa;margin:.4rem 0 1rem">Keywords: {html.escape(keywords)}</p>' if keywords else ''
+        summarize_btn = f' &bull; <button id="summarize-btn" class="summarize" data-url="{ext_link}">Summarize</button>' if summarizer_endpoint else ''
+        summary_box = '<div id="summary-box"></div>' if summarizer_endpoint else ''
 
         note_name = sanitize_filename(html.unescape(a["title"]))
         note_content = (
@@ -692,8 +698,8 @@ button.summarize:disabled{{color:#555;cursor:default}}
 <body>
 <p class="back"><a href="/{feeds_html}">&larr; Feeds</a> &bull; <a href="/reading-list.html">&#9733; Reading List</a></p>
 <h1>{title_esc}</h1>
-<p class="meta">{source_html} &bull; <span>{dt_str}</span><br><a href="{ext_link}">Original</a> &bull; <a href="{obsidian_url}" class="obs">Save to Obsidian</a> &bull; <button id="copy-btn" class="copy">Copy article body</button> &bull; <button id="summarize-btn" class="summarize" data-url="{ext_link}">Summarize</button> &bull; <button class="star" data-slug="{slug}" data-title="{title_esc}" data-link="{ext_link}" data-source="{source_esc}">&#9734;</button></p>{kw_html}
-<div id="summary-box"></div>
+<p class="meta">{source_html} &bull; <span>{dt_str}</span><br><a href="{ext_link}">Original</a> &bull; <a href="{obsidian_url}" class="obs">Save to Obsidian</a> &bull; <button id="copy-btn" class="copy">Copy article body</button>{summarize_btn} &bull; <button class="star" data-slug="{slug}" data-title="{title_esc}" data-link="{ext_link}" data-source="{source_esc}">&#9734;</button></p>{kw_html}
+{summary_box}
 <div class="content">{content}</div>
 <script>{js}</script>
 </body>

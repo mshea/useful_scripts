@@ -12,7 +12,7 @@ A lightweight, self-hosted RSS reader that turns an OPML subscription file into 
    - **articles/\<slug\>.html** — one page per article.
    - **archive.html** — archive index by month.
    - **archive/YYYY-MM-DD.html** — one page per past day.
-   - **search.db** — a stripped-down SQLite FTS database for client-side search.
+   - **search.db** — a stripped-down SQLite FTS database for client-side search (titles, sources, keywords).
 
 ## Features
 
@@ -20,7 +20,7 @@ A lightweight, self-hosted RSS reader that turns an OPML subscription file into 
 - **Read-later stars.** Saved to `localStorage`; no server session needed.
 - **Keyword extraction.** Tags articles automatically with YAKE.
 - **Obsidian export.** One-click "Save to Obsidian" links on every article.
-- **Full-text search.** A tiny SQLite FTS database is served to the browser for instant search.
+- **Search.** A tiny SQLite FTS database is served to the browser for instant search across titles, sources, and keywords (not article bodies).
 - **Dark theme.** Easy on the eyes, no publisher CSS bleeding through.
 - **Summarizer support.** Optional backend endpoint for article summarization.
 
