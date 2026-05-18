@@ -11,3 +11,5 @@ This repo contains several useful scripts.
 **[Markdown Viewer](markdown-viewer.html)**. A single HTML page, self contained and usable locally in a browser, that converts markdown to HTML or HTML into markdown. It shows the output and gives you a copy and paste or save locally.
 
 **build_frwiki_xml.py**. A single script that can take the Forgotten Realms Wiki dump and turn it into a local HTML directory with a title search and categories for all 70,000+ pages.
+
+**mikes_rss_reader**. A homegrown vibe-coded RSS reader for low-bandwidth situations. Completely client side except for the summarize function which requires some sort of service to accept text and return a summary. Released under CC0.
