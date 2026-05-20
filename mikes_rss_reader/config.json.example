@@ -1,5 +1,7 @@
 {
+  // The OPML subscriptions file. Must be inside output_dir so it's web-accessible.
   "opml_file": "subscriptions.opml",
+  // This directory must be served by a web server. All generated output goes here.
   "output_dir": "public_html",
   "db_path": "feeds.db",
   "days_back": 1,

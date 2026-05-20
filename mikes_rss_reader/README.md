@@ -81,8 +81,8 @@ OPML_OUTPUT_DIR=/var/www/html python3 rss_reader.py
 
 | Key | Description |
 |-----|-------------|
-| `opml_file` | Path to your OPML subscription file. |
-| `output_dir` | Root directory for all generated HTML. |
+| `opml_file` | Path to your OPML subscription file. Must be inside `output_dir` so it's served by the web server. |
+| `output_dir` | Root directory for all generated HTML. **This directory must be web-accessible.** |
 | `db_path` | SQLite database for article storage. |
 | `days_back` | How many days of articles to fetch and display. |
 | `feed_timeout` | Seconds to wait per feed. |
@@ -110,14 +110,14 @@ public_html/
 ├── feeds.html              # today's articles
 ├── archive.html            # archive index
 ├── search.db               # SQLite FTS database for client-side search
-├── subscriptions.opml      # copy of your OPML file
+├── subscriptions.opml      # your OPML file (canonical copy lives here)
 ├── articles/
 │   └── <slug>.html         # one page per article
 └── archive/
     └── YYYY-MM-DD.html     # one page per past day
 ```
 
-Serve `public_html/` with any static web server (nginx, Apache, Caddy, `python -m http.server`, etc.).
+Serve `output_dir` with any static web server (nginx, Apache, Caddy, `python -m http.server`, etc.). This directory must be web-accessible — the OPML file lives there and is linked from the feed page for download.
 
 ## License
 
