@@ -15,7 +15,6 @@
     "feeds_html": "feeds.html",
     "archive_html": "archive.html",
     "search_db": "search.db",
-    "opml_copy": "subscriptions.opml",
     "articles_dir": "articles",
     "archive_dir": "archive"
   }

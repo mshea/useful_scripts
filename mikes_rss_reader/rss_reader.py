@@ -130,7 +130,6 @@ def load_config(config_path):
     cfg["feeds_html"] = resolve_out(files.get("feeds_html", str(out / "feeds.html")))
     cfg["archive_html"] = resolve_out(files.get("archive_html", str(out / "archive.html")))
     cfg["search_db"] = resolve_out(files.get("search_db", str(out / "search.db")))
-    cfg["opml_copy"] = resolve_out(files.get("opml_copy", str(out / "subscriptions.opml")))
     cfg["articles_dir"] = resolve_out(files.get("articles_dir", str(out / "articles")))
     cfg["archive_dir"] = resolve_out(files.get("archive_dir", str(out / "archive")))
 
@@ -162,7 +161,6 @@ def generate_config(path="config.json"):
             "feeds_html": "feeds.html",
             "archive_html": "archive.html",
             "search_db": "search.db",
-            "opml_copy": "subscriptions.opml",
             "articles_dir": "articles",
             "archive_dir": "archive"
         }
@@ -269,7 +267,7 @@ copybtn.addEventListener('click',function(){
   var text=document.querySelector('.content').innerText;
   navigator.clipboard.writeText(text).then(function(){
     copybtn.textContent='Copied!';
-    setTimeout(function(){copybtn.textContent='Copy article body'},2000);
+    setTimeout(function(){copybtn.textContent='Copy text'},2000);
   });
 });
 var sumbtn=document.getElementById('summarize-btn');
@@ -686,7 +684,7 @@ h1{{font-size:1.4rem;color:#e8e8e8;margin-bottom:.75rem;line-height:1.3}}
 .back{{font-size:1rem;margin-bottom:1rem}}
 .back a{{color:#555;text-decoration:none;padding:.2rem 0;display:inline-block}}
 .back a:hover{{color:#aaa}}
-button.star{{background:none;border:none;cursor:pointer;font-size:1.1rem;color:#555;padding:0 .2rem;vertical-align:middle;line-height:1}}
+button.star{{background:none;border:none;cursor:pointer;font-size:1.65rem;color:#555;padding:0 .2rem;vertical-align:middle;line-height:1}}
 button.star.saved{{color:#f0c040}}
 button.copy{{background:none;border:none;cursor:pointer;font-size:1.1rem;color:#aaa;padding:.3rem 0;vertical-align:middle}}
 button.summarize{{background:none;border:none;cursor:pointer;font-size:1.1rem;color:#aaa;padding:.3rem 0;vertical-align:middle}}
@@ -697,8 +695,8 @@ button.summarize:disabled{{color:#555;cursor:default}}
 </head>
 <body>
 <p class="back"><a href="/{feeds_html}">&larr; Feeds</a> &bull; <a href="/reading-list.html">&#9733; Reading List</a></p>
-<h1>{title_esc}</h1>
-<p class="meta">{source_html} &bull; <span>{dt_str}</span><br><a href="{ext_link}">Original</a> &bull; <a href="{obsidian_url}" class="obs">Save to Obsidian</a> &bull; <button id="copy-btn" class="copy">Copy article body</button>{summarize_btn} &bull; <button class="star" data-slug="{slug}" data-title="{title_esc}" data-link="{ext_link}" data-source="{source_esc}">&#9734;</button></p>{kw_html}
+<h1><a href="{ext_link}" style="color:#e8e8e8;text-decoration:none">{title_esc}</a><button class="star" data-slug="{slug}" data-title="{title_esc}" data-link="{ext_link}" data-source="{source_esc}">&#9734;</button></h1>
+<p class="meta">{source_html} &bull; <span>{dt_str}</span><br><a href="{obsidian_url}" class="obs">Save to Obsidian</a> &bull; <button id="copy-btn" class="copy">Copy text</button>{summarize_btn}</p>{kw_html}
 {summary_box}
 <div class="content">{content}</div>
 <script>{js}</script>
@@ -785,7 +783,7 @@ def render_html(articles, cfg):
     count = len(articles)
     feeds_name = os.path.basename(cfg["feeds_html"])
     archive_name = os.path.basename(cfg["archive_html"])
-    opml_name = os.path.basename(cfg["opml_copy"])
+    opml_name = os.path.basename(cfg["opml_file"])
     nav_html, body_html = render_sections_and_nav(
         groups, extra_nav=f'<a href="/{archive_name}">Archive</a> &bull; <a href="/reading-list.html">&#9733; Reading List</a> &bull; <a href="/search.html">Search</a> &bull; <a href="/{opml_name}" download>OPML</a>'
     )
@@ -945,8 +943,6 @@ def main():
     build_search_db(cfg["db_path"], search_db)
     shutil.copy2(search_db, cfg["search_db"])
     print(f"Copied search.db to {cfg['search_db']}")
-    shutil.copy2(cfg["opml_file"], cfg["opml_copy"])
-    print(f"Copied OPML to {cfg['opml_copy']}")
 
 
 if __name__ == "__main__":
