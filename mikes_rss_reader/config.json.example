@@ -13,6 +13,7 @@
     "folder": "Clippings"
   },
   "summarizer_endpoint": "",
+  "retention_days": 30,
   "output_files": {
     "feeds_html": "feeds.html",
     "archive_html": "archive.html",

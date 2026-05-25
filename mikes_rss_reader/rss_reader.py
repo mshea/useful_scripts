@@ -15,6 +15,7 @@ Features
 - Keyword extraction with YAKE for quick tagging.
 - Obsidian vault links for clipping articles.
 - "Summarize" button on article pages (configurable backend endpoint; see config.json).
+- Retention policy: purges articles older than N days (default 30), cleans orphan HTML files, VACUUMs DB.
 
 Dependencies
 - Python 3.10+
@@ -42,6 +43,9 @@ Configuration
 All settings live in config.json. Relative paths are resolved against the
 directory containing config.json. Environment variables prefixed with OPML_
 can override any config value (e.g., OPML_OUTPUT_DIR=/var/www).
+
+    retention_days   Delete articles older than this many days (0 = keep forever).
+
 
 Output structure
     public_html/
@@ -80,11 +84,6 @@ import shutil
 import json
 import argparse
 from zoneinfo import ZoneInfo
-
-
-def _config_dir():
-    """Return the directory used for resolving relative config paths."""
-    return Path.cwd()
 
 
 def load_config(config_path):
@@ -138,6 +137,7 @@ def load_config(config_path):
     cfg.setdefault("category_order", [])
     cfg.setdefault("timezone", "America/New_York")
     cfg.setdefault("summarizer_endpoint", "")
+    cfg.setdefault("retention_days", 30)
     cfg.setdefault("obsidian", {"vault": "My Vault", "folder": "Clippings"})
     return cfg
 
@@ -152,11 +152,12 @@ def generate_config(path="config.json"):
         "feed_timeout": 10,
         "category_order": ["Favorite Blogs", "RPGs"],
         "timezone": "America/New_York",
+        "summarizer_endpoint": "",
+        "retention_days": 30,
         "obsidian": {
             "vault": "My Vault",
             "folder": "Clippings"
         },
-        "summarizer_endpoint": "",
         "output_files": {
             "feeds_html": "feeds.html",
             "archive_html": "archive.html",
@@ -297,7 +298,6 @@ sumbtn.addEventListener('click',function(){
 
 
 
-
 def parse_opml(opml_path):
     """Return list of (title, url, category) from OPML file."""
     tree = ET.parse(opml_path)
@@ -409,8 +409,11 @@ def build_search_db(source_db, search_db_path):
 
 
 def _normalize_quotes(text):
-    """Convert smart quotes to ASCII so YAKE's stopword filter catches contractions."""
-    return text.replace("'", "'").replace(""", '"').replace(""", '"')
+    """Convert smart quotes and apostrophe variants to ASCII so YAKE's stopword
+    filter catches contractions."""
+    for ch in ("‘", "’", "‛", "ʼ", "ʻ", "`", "´"):
+        text = text.replace(ch, "'")
+    return text.replace("“", '"').replace("”", '"')
 
 
 def _is_subsumed(shorter, longer):
@@ -465,7 +468,8 @@ def extract_keywords(text, top=10):
 
         cleaned = []
         for kw, score in raw:
-            kw_lower = kw.lower()
+            kw_norm = _normalize_quotes(kw)
+            kw_lower = kw_norm.lower()
             if "n't" in kw_lower or "'ve" in kw_lower or "'ll" in kw_lower or "'re" in kw_lower:
                 continue
             kw_clean = _clean_keyword(kw)
@@ -889,6 +893,55 @@ def build_archives(db_path, cfg, today_count=None):
     return days_counts
 
 
+def purge_old_articles(con, retention_days, articles_dir, archive_dir):
+    """Delete articles older than retention_days from DB and remove orphan HTML files."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    cutoff_str = cutoff.isoformat()
+    old = con.execute(
+        "SELECT slug FROM articles WHERE dt < ?", (cutoff_str,)
+    ).fetchall()
+    if old:
+        slugs = [r[0] for r in old if r[0]]
+        removed_files = 0
+        articles_path = Path(articles_dir)
+        for slug in slugs:
+            p = articles_path / f"{slug}.html"
+            if p.exists():
+                p.unlink()
+                removed_files += 1
+        con.execute("DELETE FROM articles WHERE dt < ?", (cutoff_str,))
+        rebuild_fts(con)
+        con.commit()
+        print(f"Purged {len(old)} articles older than {retention_days} days; removed {removed_files} HTML files")
+    else:
+        print(f"No articles older than {retention_days} days to purge")
+
+    # Clean orphan article pages (files with no matching DB row)
+    db_slugs = {r[0] for r in con.execute("SELECT slug FROM articles WHERE slug != ''").fetchall()}
+    articles_path = Path(articles_dir)
+    orphan_articles = 0
+    for p in articles_path.glob("*.html"):
+        slug = p.stem
+        if slug not in db_slugs:
+            p.unlink()
+            orphan_articles += 1
+    if orphan_articles:
+        print(f"Removed {orphan_articles} orphan article pages")
+
+    # Clean orphan archive pages (dates with no articles left in DB)
+    db_dates = {r[0] for r in con.execute("SELECT DISTINCT DATE(dt) FROM articles").fetchall()}
+    archive_path = Path(archive_dir)
+    orphan_archives = 0
+    for p in archive_path.glob("*.html"):
+        if p.stem not in db_dates:
+            p.unlink()
+            orphan_archives += 1
+    if orphan_archives:
+        print(f"Removed {orphan_archives} orphan archive pages")
+
+    con.execute("VACUUM")
+
+
 def _script_dir():
     return Path(__file__).resolve().parent
 
@@ -931,6 +984,13 @@ def main():
         con = init_db(cfg["db_path"])
         fetch_and_save(feeds, cutoff, con, timeout)
         rebuild_fts(con)
+        con.close()
+
+    # Purge articles older than retention_days
+    retention = int(cfg.get("retention_days", 30))
+    if retention > 0:
+        con = init_db(cfg["db_path"])
+        purge_old_articles(con, retention, cfg["articles_dir"], cfg["archive_dir"])
         con.close()
 
     articles = load_db(cfg["db_path"], cutoff)
