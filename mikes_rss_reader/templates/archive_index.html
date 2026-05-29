@@ -1,0 +1,14 @@
+<h1>Archive</h1>
+<nav><a href="/{{ feeds_name }}">Today</a></nav>
+<ul>
+{% for month_str, items in sections %}
+  <h2>{{ month_str }}</h2>
+  <ul>
+  {% for label, href, count in items %}
+    <li><a href="{{ href }}">{{ label }}</a><span class="dt"> &bull; {{ count }} articles</span></li>
+  {% endfor %}
+  </ul>
+{% else %}
+  <p>No archive yet.</p>
+{% endfor %}
+</ul>

@@ -12,6 +12,8 @@ A lightweight, self-hosted RSS reader that turns an OPML subscription file into 
    - **articles/\<slug\>.html** — one page per article.
    - **archive.html** — archive index by month.
    - **archive/YYYY-MM-DD.html** — one page per past day.
+   - **reading-list.html** — client-side reading list (stars saved to `localStorage`; supports export/import/clear).
+   - **search.html** — client-side search page (loads `search.db` via sql.js for instant FTS).
    - **search.db** — a stripped-down SQLite FTS database for client-side search (titles, sources, keywords).
 
 ## Features
@@ -37,7 +39,7 @@ pip install -r requirements.txt
 ## Quick start
 
 ```bash
-python3 rss_reader.py --generate-config
+python3 run.py --generate-config
 ```
 
 Edit `config.json`:
@@ -62,7 +64,7 @@ Edit `config.json`:
 Run it:
 
 ```bash
-python3 rss_reader.py
+python3 run.py
 ```
 
 Set up a cron job or systemd timer to run it on a schedule.
@@ -74,7 +76,7 @@ All settings live in `config.json`. Relative paths are resolved against the dire
 Environment variables prefixed with `OPML_` override config values:
 
 ```bash
-OPML_OUTPUT_DIR=/var/www/html python3 rss_reader.py
+OPML_OUTPUT_DIR=/var/www/html python3 run.py
 ```
 
 ### Key options
@@ -109,6 +111,8 @@ OPML_OUTPUT_DIR=/var/www/html python3 rss_reader.py
 public_html/
 ├── feeds.html              # today's articles
 ├── archive.html            # archive index
+├── reading-list.html       # reading list (localStorage-based stars)
+├── search.html             # client-side search page
 ├── search.db               # SQLite FTS database for client-side search
 ├── subscriptions.opml      # your OPML file (canonical copy lives here)
 ├── articles/

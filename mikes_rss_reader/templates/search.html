@@ -1,0 +1,7 @@
+<h1>Search</h1>
+<nav><a href="/{{ feeds_name }}">Today</a> &bull; <a href="/{{ archive_name }}">Archive</a> &bull; <a href="/{{ reading_list_name }}">&#9733; Reading List</a></nav>
+<div style="display:flex;gap:.5rem;margin-bottom:.5rem"><input id="query" type="search" placeholder="Search articles&hellip;" autocomplete="off" style="flex:1;margin-bottom:0"><button id="btn" style="font:18px Verdana,sans-serif;background:#222;color:#fff;border:1px solid #444;padding:.5rem 1rem">Search</button></div>
+<p id="status"></p>
+<div id="debug" style="font-size:.8rem;color:#c66;margin-bottom:.75rem;white-space:pre-wrap"></div>
+<ul id="results"></ul>
+<script src="/sql-wasm.js"></script>

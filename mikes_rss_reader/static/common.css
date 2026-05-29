@@ -1,0 +1,2 @@
+*{box-sizing:border-box;margin:0;padding:0}
+@media(min-width:600px){body{max-width:780px;margin:1.5rem auto;padding:0 1rem}}

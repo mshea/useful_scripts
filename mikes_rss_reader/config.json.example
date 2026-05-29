@@ -1,24 +1,18 @@
 {
-  // The OPML subscriptions file. Must be inside output_dir so it's web-accessible.
   "opml_file": "subscriptions.opml",
-  // This directory must be served by a web server. All generated output goes here.
   "output_dir": "public_html",
   "db_path": "feeds.db",
   "days_back": 1,
   "feed_timeout": 10,
-  "category_order": ["Favorite Blogs", "RPGs"],
+  "category_order": [
+    "Favorite Blogs",
+    "RPGs"
+  ],
   "timezone": "America/New_York",
   "obsidian": {
     "vault": "My Vault",
     "folder": "Clippings"
   },
   "summarizer_endpoint": "",
-  "retention_days": 30,
-  "output_files": {
-    "feeds_html": "feeds.html",
-    "archive_html": "archive.html",
-    "search_db": "search.db",
-    "articles_dir": "articles",
-    "archive_dir": "archive"
-  }
+  "retention_days": 30
 }

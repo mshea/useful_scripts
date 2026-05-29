@@ -1,0 +1,5 @@
+<p class="back"><a href="/{{ feeds_name }}">&larr; Feeds</a> &bull; <a href="/{{ reading_list_name }}">&#9733; Reading List</a></p>
+<h1><a href="{{ ext_link }}" style="color:#e8e8e8;text-decoration:none">{{ title_esc }}</a><button class="star" data-slug="{{ slug }}" data-title="{{ title_esc }}" data-link="{{ ext_link }}" data-source="{{ source_esc }}">&#9734;</button></h1>
+<p class="meta">{{ source_html }} &bull; <span>{{ dt_str }}</span><br><a href="{{ obsidian_url }}" class="obs">Save to Obsidian</a> &bull; <button id="copy-btn" class="copy">Copy text</button>{% if summarize_btn %}{{ summarize_btn }}{% endif %}</p>{{ kw_html }}
+{% if summary_box %}{{ summary_box }}{% endif %}
+<div class="content">{{ content }}</div>
