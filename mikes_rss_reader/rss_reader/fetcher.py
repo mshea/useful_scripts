@@ -30,7 +30,7 @@ def parse_opml(opml_path):
             else:
                 walk(outline, cat or text)
 
-    walk(root, "")
+    walk(root.find("body"), "")
     return feeds
 
 
@@ -68,7 +68,7 @@ def fetch_and_save(feeds, cutoff, con, timeout=10):
             summary = entry.get("summary", "")
             site_link = parsed.feed.get("link", "")
             existing = con.execute(
-                "SELECT id FROM articles WHERE slug=?", (slug,)
+                "SELECT slug FROM articles WHERE slug=?", (slug,)
             ).fetchone()
             if existing:
                 con.execute(
