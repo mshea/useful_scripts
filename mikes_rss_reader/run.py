@@ -109,6 +109,7 @@ def main():
     search_db = str(Path(cfg["db_path"]).with_suffix('')) + "_search.db"
     build_search_db(cfg["db_path"], search_db)
     shutil.copy2(search_db, cfg["search_db"])
+    os.remove(search_db)
     print(f"Copied search.db to {cfg['search_db']}")
 
     # Purge articles older than retention_days

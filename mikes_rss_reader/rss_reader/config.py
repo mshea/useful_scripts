@@ -35,6 +35,16 @@ def load_config(config_path):
     cfg["output_dir"] = resolve(cfg.get("output_dir", "public_html"))
     cfg["db_path"] = resolve(cfg.get("db_path", "feeds.db"))
 
+    # If the OPML file isn't inside output_dir, symlink it there so the
+    # web server can serve the download link (renderer uses basename only).
+    opml_in_out = Path(cfg["output_dir"]) / Path(cfg["opml_file"]).name
+    opml_path = Path(cfg["opml_file"])
+    if opml_path.resolve() != opml_in_out.resolve():
+        if opml_in_out.is_symlink():
+            opml_in_out.unlink()
+        if not opml_in_out.exists():
+            opml_in_out.symlink_to(opml_path.resolve())
+
     out = Path(cfg["output_dir"])
     cfg["feeds_html"] = str(out / "feeds.html")
     cfg["archive_html"] = str(out / "archive.html")

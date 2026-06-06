@@ -13,6 +13,6 @@
     "vault": "My Vault",
     "folder": "Clippings"
   },
-  "summarizer_endpoint": "",
-  "retention_days": 30
+  "summarizer_endpoint": "/summarizer/summarize/text",
+  "retention_days": 90
 }
