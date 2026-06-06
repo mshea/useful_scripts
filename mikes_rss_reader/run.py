@@ -105,6 +105,12 @@ def main():
         rebuild_fts(con)
         con.close()
 
+    # Build search DB before purging so search has all articles
+    search_db = str(Path(cfg["db_path"]).with_suffix('')) + "_search.db"
+    build_search_db(cfg["db_path"], search_db)
+    shutil.copy2(search_db, cfg["search_db"])
+    print(f"Copied search.db to {cfg['search_db']}")
+
     # Purge articles older than retention_days
     retention = int(cfg.get("retention_days", 30))
     if retention > 0:
@@ -114,14 +120,17 @@ def main():
 
     articles = load_db(cfg["db_path"], cutoff)
     save_article_pages(articles, cfg["articles_dir"], cfg)
+
+    # Also write pages for any articles missing their HTML (from archives/search)
+    all_articles = load_db(cfg["db_path"])
+    missing = [a for a in all_articles if not (Path(cfg["articles_dir"]) / f"{a['slug']}.html").exists()]
+    if missing:
+        print(f"Writing {len(missing)} missing article pages")
+        save_article_pages(missing, cfg["articles_dir"], cfg)
     render_html(articles, cfg)
 
     days_counts = build_archives(cfg["db_path"], cfg, today_count=len(articles))
     render_archive_index(days_counts, cfg)
-    search_db = str(Path(cfg["db_path"]).with_suffix('')) + "_search.db"
-    build_search_db(cfg["db_path"], search_db)
-    shutil.copy2(search_db, cfg["search_db"])
-    print(f"Copied search.db to {cfg['search_db']}")
 
     render_reading_list_page(cfg)
     render_search_page(cfg)

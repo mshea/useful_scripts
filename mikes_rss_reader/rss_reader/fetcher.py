@@ -85,21 +85,25 @@ def fetch_and_save(feeds, cutoff, con, timeout=10):
                 )
                 updated += 1
             else:
-                con.execute(
-                    "INSERT INTO articles (slug, link, title, summary, content, dt, source, site_link, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        slug,
-                        link,
-                        entry.get("title", ""),
-                        summary,
-                        content,
-                        dt.isoformat(),
-                        title,
-                        site_link,
-                        category,
-                    ),
-                )
-                inserted += 1
+                try:
+                    con.execute(
+                        "INSERT INTO articles (slug, link, title, summary, content, dt, source, site_link, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            slug,
+                            link,
+                            entry.get("title", ""),
+                            summary,
+                            content,
+                            dt.isoformat(),
+                            title,
+                            site_link,
+                            category,
+                        ),
+                    )
+                    inserted += 1
+                except con.IntegrityError:
+                    # Link collision with existing article — skip
+                    updated += 1
     con.commit()
     print(f"Inserted {inserted} articles, updated {updated}")
 
